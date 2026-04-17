@@ -9,6 +9,7 @@ export default function Shop({ slug }) {
   const [vendor, setVendor] = useState(null);
   const [items, setItems] = useState([]);
   const [stats, setStats] = useState(null);
+  const [reservations, setReservations] = useState({});
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("All");
   const [cart, setCart] = useState([]);
@@ -24,9 +25,26 @@ export default function Shop({ slug }) {
       setItems(its || []);
       const { data: st } = await supabase.rpc("get_vendor_stats", { vendor_user_id: vend.id });
       if (st && st[0]) setStats(st[0]);
+      // Fetch pending orders to compute stock reservations
+      const { data: pending } = await supabase.from("orders").select("cart, flow_status").eq("user_id", vend.id).in("flow_status", ["awaiting_pricing", "awaiting_payment", "payment_claimed"]);
+      const resMap = {};
+      (pending || []).forEach(o => {
+        (o.cart || []).forEach(ci => {
+          if (ci.id) resMap[ci.id] = (resMap[ci.id] || 0) + (ci.qty || 0);
+        });
+      });
+      setReservations(resMap);
       setLoading(false);
     })();
   }, [slug]);
+
+  // Helper: available = stock - reserved - (what's in current cart)
+  const availableOf = (item) => {
+    if (item.stock === null || item.stock === undefined) return null; // untracked
+    const reserved = reservations[item.id] || 0;
+    const inCart = cart.find(c => c.id === item.id)?.qty || 0;
+    return Math.max(0, item.stock - reserved - inCart);
+  };
 
   if (loading) return <><style>{CSS}</style><div className="loading-screen"><div className="spinner" /></div></>;
   if (!vendor) return <><style>{CSS}</style><div className="loading-screen"><div style={{ textAlign: "center", color: "var(--t2)" }}><OjaLogo w={60} color="var(--t3)" /><div style={{ marginTop: 20, fontSize: 15 }}>Shop not found</div></div></div></>;
@@ -44,11 +62,23 @@ export default function Shop({ slug }) {
   const cartCount = cart.reduce((s, i) => s + i.qty, 0);
 
   const addToCart = (item) => {
+    const avail = availableOf(item);
+    if (avail !== null && avail <= 0) return; // out of stock
     const existing = cart.find(c => c.id === item.id);
     if (existing) setCart(cart.map(c => c.id === item.id ? { ...c, qty: c.qty + 1 } : c));
     else setCart([...cart, { id: item.id, name: item.name, price: item.price, image: item.image, type: item.type, qty: 1 }]);
   };
-  const updateQty = (id, delta) => { setCart(cart.map(c => c.id === id ? { ...c, qty: Math.max(0, c.qty + delta) } : c).filter(c => c.qty > 0)); };
+  const updateQty = (id, delta) => {
+    if (delta > 0) {
+      const item = items.find(i => i.id === id);
+      if (item && item.stock !== null && item.stock !== undefined) {
+        const reserved = reservations[id] || 0;
+        const inCart = cart.find(c => c.id === id)?.qty || 0;
+        if (reserved + inCart + 1 > item.stock) return; // hard block
+      }
+    }
+    setCart(cart.map(c => c.id === id ? { ...c, qty: Math.max(0, c.qty + delta) } : c).filter(c => c.qty > 0));
+  };
 
   return <>
     <style>{CSS}</style>
@@ -68,15 +98,22 @@ export default function Shop({ slug }) {
       <div className="shop-content">
         {tabs.length > 1 && <div className="shop-tabs">{tabs.map(t => <button key={t} className={`shop-tab ${tab === t ? "active" : ""}`} onClick={() => setTab(t)}>{t}</button>)}</div>}
         {filtered.length === 0 ? <div style={{ textAlign: "center", padding: 60, color: "var(--t3)" }}>No items in this category</div> :
-          <div className="shop-grid">{filtered.map(item => <div key={item.id} className="shop-card" onClick={() => vendor.accepts_orders && addToCart(item)}>
-            {item.image ? <img className="shop-img" src={item.image} alt={item.name} /> : <div className="shop-img">{I.cam}</div>}
-            <div className="shop-body">
-              <div className="shop-type">{item.type}</div>
-              <div className="shop-name">{item.name}</div>
-              {item.description && <div className="shop-desc">{item.description}</div>}
-              <div className="shop-price">{item.price ? fmt(item.price) : "Price on request"}</div>
-            </div>
-          </div>)}</div>
+          <div className="shop-grid">{filtered.map(item => {
+            const avail = availableOf(item);
+            const isOut = avail !== null && avail <= 0;
+            const isLow = avail !== null && avail > 0 && avail <= 5;
+            return <div key={item.id} className="shop-card" style={{ opacity: isOut ? 0.55 : 1, cursor: isOut ? "not-allowed" : "pointer" }} onClick={() => !isOut && vendor.accepts_orders && addToCart(item)}>
+              {item.image ? <img className="shop-img" src={item.image} alt={item.name} /> : <div className="shop-img">{I.cam}</div>}
+              <div className="shop-body">
+                <div className="shop-type">{item.type}</div>
+                <div className="shop-name">{item.name}</div>
+                {item.description && <div className="shop-desc">{item.description}</div>}
+                <div className="shop-price">{item.price ? fmt(item.price) : "Price on request"}</div>
+                {isOut && <div style={{ marginTop: 4, fontSize: 11, fontWeight: 700, color: "var(--r)", textTransform: "uppercase", letterSpacing: .3 }}>Out of stock</div>}
+                {isLow && <div style={{ marginTop: 4, fontSize: 11, fontWeight: 600, color: "var(--am)" }}>Only {avail} left</div>}
+              </div>
+            </div>;
+          })}</div>
         }
       </div>
       {cart.length > 0 && <div className="cart-bar"><div className="cart-bar-in">

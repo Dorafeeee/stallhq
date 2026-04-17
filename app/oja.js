@@ -265,7 +265,7 @@ function CatPage({ session, items, setItems, modal, setModal, search, setSearch,
   };
   const del = async (id) => { await supabase.from("items").delete().eq("id", id); setItems(items.filter(i => i.id !== id)); };
   return <div>
-    <div className="ph"><div><div className="pt">{catL}</div><div className="ps">{items.length} item{items.length !== 1 ? "s" : ""}</div></div><button className="btn btn-p" onClick={() => setModal({ t: "item", d: { type: dt, name: "", price: "", description: "", stock: "", image: "" } })}>{I.plus} Add</button></div>
+    <div className="ph"><div><div className="pt">{catL}</div><div className="ps">{items.length} item{items.length !== 1 ? "s" : ""}</div></div><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><button className="btn btn-s" onClick={() => setModal({ t: "bulk", d: null })}>Bulk upload</button><button className="btn btn-p" onClick={() => setModal({ t: "item", d: { type: dt, name: "", price: "", description: "", stock: "", image: "" } })}>{I.plus} Add</button></div></div>
     <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 18, flexWrap: "wrap" }}>
       {biz === "both" && <div className="tabs" style={{ marginBottom: 0, borderBottom: "none" }}>{["All", "Product", "Service"].map(t => <button key={t} className={`tab ${tab === t ? "active" : ""}`} onClick={() => setTab(t)}>{t === "All" ? "All" : t + "s"}</button>)}</div>}
       <div className="sb-w" style={{ marginLeft: "auto" }}><span className="ic">{I.search}</span><input placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)} /></div>
@@ -294,11 +294,214 @@ function CatPage({ session, items, setItems, modal, setModal, search, setSearch,
       </div>)}</div>
     </>}
     {modal?.t === "item" && <Modal title={modal.d.id ? "Edit Item" : "Add Item"} onClose={() => setModal(null)}><ItemForm d={modal.d} save={save} cancel={() => setModal(null)} biz={biz} /></Modal>}
+    {modal?.t === "bulk" && <Modal title="Bulk Upload Items" onClose={() => setModal(null)} wide><BulkUpload session={session} biz={biz} items={items} setItems={setItems} close={() => setModal(null)} /></Modal>}
   </div>;
 }
 function ItemForm({ d, save, cancel, biz }) {
   const [f, sf] = useState(d); const set = (k, v) => sf(p => ({ ...p, [k]: v })); const [busy, setBusy] = useState(false);
   return <div><div className="mb"><div className="fg"><label className="fl">Photo</label><ImgUp value={f.image} onChange={v => set("image", v)} /></div><div className="fr">{biz === "both" && <div className="fg"><label className="fl">Type</label><select className="fs" value={f.type} onChange={e => set("type", e.target.value)}><option>Product</option><option>Service</option></select></div>}<div className="fg"><label className="fl">Price (NGN)</label><input className="fi" type="number" placeholder="Empty = varies" value={f.price || ""} onChange={e => set("price", e.target.value)} /></div></div><div className="fg"><label className="fl">Name</label><input className="fi" placeholder={f.type === "Service" ? "e.g. Bridal Makeup" : "e.g. Ankara Fabric"} value={f.name} onChange={e => set("name", e.target.value)} /></div>{f.type === "Product" && <div className="fg"><label className="fl">Stock</label><input className="fi" type="number" placeholder="Optional" value={f.stock || ""} onChange={e => set("stock", e.target.value)} /></div>}<div className="fg"><label className="fl">Description</label><textarea className="ft" placeholder="Brief description..." value={f.description || ""} onChange={e => set("description", e.target.value)} /></div></div><div className="mf"><button className="btn btn-s" onClick={cancel}>Cancel</button><button className="btn btn-p" disabled={!f.name.trim() || busy} onClick={async () => { setBusy(true); await save({ ...f, price: f.price ? Number(f.price) : null, stock: f.stock ? Number(f.stock) : null }); setBusy(false); }}>{busy ? "Saving..." : "Save"}</button></div></div>;
+}
+
+// ══════════════════════════════════════════════════════════════
+// BULK UPLOAD (CSV)
+// ══════════════════════════════════════════════════════════════
+function parseCSV(text) {
+  const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").filter(l => l.trim());
+  return lines.map(line => {
+    const cells = [];
+    let cur = "";
+    let inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (inQ) {
+        if (c === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+        else if (c === '"') inQ = false;
+        else cur += c;
+      } else {
+        if (c === '"') inQ = true;
+        else if (c === ",") { cells.push(cur); cur = ""; }
+        else cur += c;
+      }
+    }
+    cells.push(cur);
+    return cells.map(c => c.trim());
+  });
+}
+
+function BulkUpload({ session, biz, items, setItems, close }) {
+  const [rows, setRows] = useState(null); // [{name, type, price, stock, description, _error}]
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null); // {inserted, failed}
+  const fileRef = useRef();
+
+  const downloadTemplate = () => {
+    const defaultType = biz === "services" ? "Service" : "Product";
+    const csv = [
+      "name,type,price,stock,description",
+      biz === "services" ? "Bridal Makeup,Service,80000,,Includes trial session" : "Banana Bread,Product,10000,15,Fresh baked daily",
+      biz === "services" ? "Party Makeup,Service,35000,,Onsite or studio" : "Coconut Cookies,Product,5000,30,Pack of 12",
+      biz === "both" ? "Studio Booking,Service,15000,,Per hour" : `Sample Item,${defaultType},12000,,Short description here`,
+    ].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "oja-items-template.csv"; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const onFile = async (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    const text = await f.text();
+    const parsed = parseCSV(text);
+    if (parsed.length < 2) { alert("CSV is empty or has no data rows."); return; }
+
+    const headers = parsed[0].map(h => h.toLowerCase());
+    const idx = {
+      name: headers.indexOf("name"),
+      type: headers.indexOf("type"),
+      price: headers.indexOf("price"),
+      stock: headers.indexOf("stock"),
+      description: headers.indexOf("description"),
+    };
+    if (idx.name === -1) { alert("CSV must include a 'name' column. Please download the template."); return; }
+
+    const defaultType = biz === "services" ? "Service" : "Product";
+    const validated = parsed.slice(1).map((row, i) => {
+      const name = (row[idx.name] || "").trim();
+      const typeRaw = idx.type !== -1 ? (row[idx.type] || "").trim() : "";
+      const priceRaw = idx.price !== -1 ? (row[idx.price] || "").trim() : "";
+      const stockRaw = idx.stock !== -1 ? (row[idx.stock] || "").trim() : "";
+      const description = idx.description !== -1 ? (row[idx.description] || "").trim() : "";
+
+      let _error = "";
+      if (!name) _error = "Name is required";
+
+      let type = typeRaw;
+      if (type && !["Product", "Service"].includes(type)) {
+        // case-insensitive match
+        const t = type.toLowerCase();
+        if (t === "product" || t === "products") type = "Product";
+        else if (t === "service" || t === "services") type = "Service";
+        else { _error = _error || `Type must be Product or Service (got "${typeRaw}")`; }
+      }
+      if (!type) type = defaultType;
+      if (biz === "products" && type !== "Product") _error = _error || "Your business is products-only; type must be Product";
+      if (biz === "services" && type !== "Service") _error = _error || "Your business is services-only; type must be Service";
+
+      let price = null;
+      if (priceRaw) {
+        const p = Number(priceRaw.replace(/[,\s\u20A6]/g, ""));
+        if (isNaN(p) || p < 0) _error = _error || `Price must be a number (got "${priceRaw}")`;
+        else price = p;
+      }
+
+      let stock = null;
+      if (stockRaw) {
+        const s = Number(stockRaw);
+        if (isNaN(s) || s < 0 || !Number.isInteger(s)) _error = _error || `Stock must be a whole number (got "${stockRaw}")`;
+        else stock = s;
+      }
+
+      return { rowNum: i + 2, name, type, price, stock, description, _error };
+    });
+
+    setRows(validated);
+    setResult(null);
+  };
+
+  const validCount = rows ? rows.filter(r => !r._error).length : 0;
+  const errorCount = rows ? rows.filter(r => r._error).length : 0;
+
+  const importAll = async () => {
+    setBusy(true);
+    const good = rows.filter(r => !r._error);
+    const payload = good.map(r => ({
+      user_id: session.user.id,
+      name: r.name, type: r.type, price: r.price, stock: r.stock,
+      description: r.description || null, image: null,
+    }));
+    let inserted = 0, failed = 0;
+    if (payload.length > 0) {
+      const { data, error } = await supabase.from("items").insert(payload).select();
+      if (error) { failed = payload.length; }
+      else { inserted = data.length; setItems([...data, ...items]); }
+    }
+    setBusy(false);
+    setResult({ inserted, failed, skipped: errorCount });
+  };
+
+  if (result) {
+    return <div>
+      <div className="mb">
+        <div style={{ padding: 20, background: "var(--gl)", borderRadius: 10, textAlign: "center", marginBottom: 14 }}>
+          <div style={{ fontFamily: "var(--fm)", fontWeight: 700, fontSize: 20, color: "var(--g)", marginBottom: 4 }}>{result.inserted}</div>
+          <div style={{ fontSize: 12, color: "var(--t2)" }}>item{result.inserted !== 1 ? "s" : ""} imported successfully</div>
+        </div>
+        {result.skipped > 0 && <div style={{ padding: 12, background: "var(--aml)", color: "var(--am)", borderRadius: 8, fontSize: 12.5, marginBottom: 10 }}>
+          {result.skipped} row{result.skipped !== 1 ? "s were" : " was"} skipped due to errors. Fix them in your CSV and upload again to add them.
+        </div>}
+        {result.failed > 0 && <div style={{ padding: 12, background: "var(--rl)", color: "var(--r)", borderRadius: 8, fontSize: 12.5 }}>
+          {result.failed} row{result.failed !== 1 ? "s" : ""} failed to save. Try again or contact support.
+        </div>}
+      </div>
+      <div className="mf"><button className="btn btn-p" onClick={close}>Done</button></div>
+    </div>;
+  }
+
+  if (!rows) {
+    return <div>
+      <div className="mb">
+        <div style={{ fontSize: 13, color: "var(--t2)", lineHeight: 1.6, marginBottom: 16 }}>
+          Upload a CSV file to add multiple items at once. Each row becomes one item. You can add images later by editing individual items.
+        </div>
+        <div style={{ padding: 14, background: "var(--bg)", borderRadius: 10, fontSize: 12.5, marginBottom: 16, fontFamily: "var(--fm)", lineHeight: 1.7 }}>
+          <div style={{ fontWeight: 700, marginBottom: 6 }}>Required column:</div>
+          <div>\u2022 <b>name</b> \u2014 item name</div>
+          <div style={{ fontWeight: 700, marginTop: 10, marginBottom: 6 }}>Optional columns:</div>
+          <div>\u2022 <b>type</b> \u2014 Product or Service (defaults to {biz === "services" ? "Service" : "Product"})</div>
+          <div>\u2022 <b>price</b> \u2014 number in NGN (empty = "varies")</div>
+          <div>\u2022 <b>stock</b> \u2014 whole number (Products only; empty = untracked)</div>
+          <div>\u2022 <b>description</b> \u2014 free text</div>
+        </div>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button className="btn btn-s" onClick={downloadTemplate}>Download template</button>
+          <button className="btn btn-p" onClick={() => fileRef.current?.click()}>Choose CSV file</button>
+          <input ref={fileRef} type="file" accept=".csv,text/csv" style={{ display: "none" }} onChange={onFile} />
+        </div>
+      </div>
+      <div className="mf"><button className="btn btn-s" onClick={close}>Cancel</button></div>
+    </div>;
+  }
+
+  return <div>
+    <div className="mb">
+      <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+        <div style={{ padding: "8px 14px", background: "var(--gl)", color: "var(--g)", borderRadius: 8, fontSize: 12, fontWeight: 700 }}>{validCount} valid</div>
+        {errorCount > 0 && <div style={{ padding: "8px 14px", background: "var(--rl)", color: "var(--r)", borderRadius: 8, fontSize: 12, fontWeight: 700 }}>{errorCount} with errors</div>}
+      </div>
+      <div style={{ maxHeight: "50vh", overflowY: "auto", border: "1px solid var(--b)", borderRadius: 8 }}>
+        <table style={{ width: "100%", fontSize: 12 }}>
+          <thead style={{ position: "sticky", top: 0, background: "var(--sh)" }}>
+            <tr><th style={{ padding: "8px 10px", textAlign: "left", width: 40 }}>#</th><th style={{ padding: "8px 10px", textAlign: "left" }}>Name</th><th style={{ padding: "8px 10px", textAlign: "left" }}>Type</th><th style={{ padding: "8px 10px", textAlign: "left" }}>Price</th><th style={{ padding: "8px 10px", textAlign: "left" }}>Stock</th></tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => <tr key={i} style={{ background: r._error ? "var(--rl)" : "transparent" }}>
+              <td style={{ padding: "7px 10px", color: "var(--t3)", fontFamily: "var(--fm)", fontSize: 11 }}>{r.rowNum}</td>
+              <td style={{ padding: "7px 10px", fontWeight: 500 }}>{r.name || <span style={{ color: "var(--r)" }}>(missing)</span>}{r._error && <div style={{ fontSize: 10.5, color: "var(--r)", marginTop: 2 }}>\u26a0 {r._error}</div>}</td>
+              <td style={{ padding: "7px 10px" }}>{r.type}</td>
+              <td style={{ padding: "7px 10px" }}>{r.price !== null ? fmt(r.price) : "\u2014"}</td>
+              <td style={{ padding: "7px 10px" }}>{r.stock !== null ? r.stock : "\u2014"}</td>
+            </tr>)}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div className="mf">
+      <button className="btn btn-s" onClick={() => setRows(null)}>Back</button>
+      <button className="btn btn-p" disabled={busy || validCount === 0} onClick={importAll}>{busy ? "Importing..." : `Import ${validCount} item${validCount !== 1 ? "s" : ""}`}</button>
+    </div>
+  </div>;
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -377,7 +580,7 @@ function CForm({ d, save, cancel }) {
 // ══════════════════════════════════════════════════════════════
 // ORDERS (with storefront flow)
 // ══════════════════════════════════════════════════════════════
-function OrdPage({ session, orders, setOrders, customers, setCustomers, items, payments, setPayments, payFor, paidAmount, modal, setModal, search, setSearch, ordL, profile }) {
+function OrdPage({ session, orders, setOrders, customers, setCustomers, items, payments, setPayments, payFor, paidAmount, modal, setModal, search, setSearch, ordL, profile, reload }) {
   const [tab, setTab] = useState("Action Needed");
 
   const actionNeeded = (o) => o.flow_status === "awaiting_pricing" || o.flow_status === "payment_claimed";
@@ -438,7 +641,7 @@ function OrdPage({ session, orders, setOrders, customers, setCustomers, items, p
       </div>; })}</div>
     </>}
     {modal?.t === "o" && <Modal title={modal.d.id ? "Edit" : "New"} onClose={() => setModal(null)}><OForm d={modal.d} customers={customers} items={items} save={saveOrder} cancel={() => setModal(null)} /></Modal>}
-    {modal?.t === "sf" && <Modal title="Storefront Order" onClose={() => setModal(null)} wide><SFForm d={modal.d} profile={profile} setOrders={setOrders} orders={orders} setPayments={setPayments} payments={payments} customers={customers} setCustomers={setCustomers} session={session} close={() => setModal(null)} /></Modal>}
+    {modal?.t === "sf" && <Modal title="Storefront Order" onClose={() => setModal(null)} wide><SFForm d={modal.d} profile={profile} setOrders={setOrders} orders={orders} setPayments={setPayments} payments={payments} customers={customers} setCustomers={setCustomers} session={session} reload={reload} close={() => setModal(null)} /></Modal>}
   </div>;
 }
 
@@ -462,7 +665,7 @@ function OForm({ d, customers, items, save, cancel }) {
 }
 
 // Storefront order form - the flow-aware one
-function SFForm({ d, profile, setOrders, orders, setPayments, payments, customers, setCustomers, session, close }) {
+function SFForm({ d, profile, setOrders, orders, setPayments, payments, customers, setCustomers, session, reload, close }) {
   const [busy, setBusy] = useState(false);
   const [total, setTotal] = useState(d.total || "");
   const [note, setNote] = useState("");
@@ -498,15 +701,36 @@ function SFForm({ d, profile, setOrders, orders, setPayments, payments, customer
       const custId = await upsertCustomer();
       if (custId) payload.customer_id = custId;
     }
+    // Stock management: deduct on confirmation (once), restore on cancellation if previously deducted
+    const orderCart = d.cart || [];
+    if (newStatus === "confirmed" && !d.stock_deducted) {
+      for (const ci of orderCart) {
+        if (ci.id && ci.qty) {
+          await supabase.rpc("decrement_stock", { p_item_id: ci.id, p_qty: ci.qty });
+        }
+      }
+      payload.stock_deducted = true;
+    }
+    if (newStatus === "cancelled" && d.stock_deducted) {
+      for (const ci of orderCart) {
+        if (ci.id && ci.qty) {
+          await supabase.rpc("restore_stock", { p_item_id: ci.id, p_qty: ci.qty });
+        }
+      }
+      payload.stock_deducted = false;
+    }
     const { data } = await supabase.from("orders").update(payload).eq("id", d.id).select().single();
     if (data) {
       setOrders(orders.map(o => o.id === data.id ? data : o));
-      // Log transition
       supabase.from("activity_log").insert({ user_id: session.user.id, action: `storefront_${newStatus}` });
       if (newStatus === "confirmed") {
         const { data: pay } = await supabase.from("payments").insert({ order_id: d.id, user_id: session.user.id, amount: Number(data.total), method: "Bank Transfer", date: today(), note: "Storefront order - confirmed by vendor" }).select().single();
         if (pay) setPayments([...payments, pay]);
       }
+    }
+    // Refresh items list if stock was changed
+    if ((newStatus === "confirmed" && !d.stock_deducted) || (newStatus === "cancelled" && d.stock_deducted)) {
+      if (reload) reload();
     }
     setBusy(false); close();
   };
