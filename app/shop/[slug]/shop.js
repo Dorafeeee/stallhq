@@ -115,6 +115,8 @@ function Checkout({ vendor, cart, updateQty, onClose, onPlaced }) {
     }).select().single();
     setBusy(false);
     if (error) { setErr(error.message); return; }
+    // Log the order placement as activity for the vendor
+    supabase.from("activity_log").insert({ user_id: vendor.id, action: "storefront_order_received" });
     onPlaced(data);
   };
 

@@ -351,13 +351,17 @@ function OrdPage({ session, orders, setOrders, customers, items, payments, setPa
 
   const saveOrder = async (o, newPayments) => {
     let saved;
+    const isNew = !o.id;
     const payload = { date: o.date, customer_id: o.customer_id || null, customer_name: o.customer_name, item_id: o.item_id || null, item_name: o.item_name, total: Number(o.total) || 0, status: o.status, notes: o.notes, flow_status: o.flow_status || "active" };
     if (o.id) { const { data } = await supabase.from("orders").update(payload).eq("id", o.id).select().single(); saved = data; if (saved) setOrders(orders.map(x => x.id === saved.id ? saved : x)); }
     else { const { data } = await supabase.from("orders").insert({ user_id: session.user.id, ...payload }).select().single(); saved = data; if (saved) setOrders([saved, ...orders]); }
-    if (saved && newPayments) {
-      await supabase.from("payments").delete().eq("order_id", saved.id);
-      if (newPayments.length > 0) { const rows = newPayments.map(p => ({ order_id: saved.id, user_id: session.user.id, amount: Number(p.amount), method: p.method, date: p.date, note: p.note || null })); const { data: np } = await supabase.from("payments").insert(rows).select(); setPayments([...payments.filter(p => p.order_id !== saved.id), ...(np || [])]); }
-      else setPayments(payments.filter(p => p.order_id !== saved.id));
+    if (saved) {
+      if (isNew) supabase.from("activity_log").insert({ user_id: session.user.id, action: "order_created" });
+      if (newPayments) {
+        await supabase.from("payments").delete().eq("order_id", saved.id);
+        if (newPayments.length > 0) { const rows = newPayments.map(p => ({ order_id: saved.id, user_id: session.user.id, amount: Number(p.amount), method: p.method, date: p.date, note: p.note || null })); const { data: np } = await supabase.from("payments").insert(rows).select(); setPayments([...payments.filter(p => p.order_id !== saved.id), ...(np || [])]); if (np && np.length > 0) supabase.from("activity_log").insert({ user_id: session.user.id, action: "payment_recorded" }); }
+        else setPayments(payments.filter(p => p.order_id !== saved.id));
+      }
     }
     setModal(null);
   };
@@ -439,6 +443,8 @@ function SFForm({ d, profile, setOrders, orders, setPayments, payments, customer
     const { data } = await supabase.from("orders").update(payload).eq("id", d.id).select().single();
     if (data) {
       setOrders(orders.map(o => o.id === data.id ? data : o));
+      // Log transition
+      supabase.from("activity_log").insert({ user_id: session.user.id, action: `storefront_${newStatus}` });
       if (newStatus === "confirmed") {
         const { data: pay } = await supabase.from("payments").insert({ order_id: d.id, user_id: session.user.id, amount: Number(data.total), method: "Bank Transfer", date: today(), note: "Storefront order - confirmed by vendor" }).select().single();
         if (pay) setPayments([...payments, pay]);

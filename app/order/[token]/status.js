@@ -45,7 +45,10 @@ export default function OrderStatus({ token }) {
     setBusy(true);
     const { data } = await supabase.from("orders").update({ flow_status: "payment_claimed", payment_claimed_at: new Date().toISOString() }).eq("public_token", token).select().single();
     setBusy(false);
-    if (data) setOrder(data);
+    if (data) {
+      setOrder(data);
+      supabase.from("activity_log").insert({ user_id: data.user_id, action: "customer_claimed_payment" });
+    }
   };
 
   const copy = (text, id) => { navigator.clipboard.writeText(text); setCopied(id); setTimeout(() => setCopied(null), 1500); };
