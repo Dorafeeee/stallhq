@@ -86,17 +86,19 @@ function AdminShell({ session, profile }) {
   useEffect(() => { loadAll(); const t = setInterval(loadAll, 30000); return () => clearInterval(t); }, []);
 
   async function loadAll() {
-    const [profs, items, custs, ords, pays, acts] = await Promise.all([
+    const [profs, items, custs, ords, pays, acts, revs] = await Promise.all([
       supabase.from("profiles").select("*").order("created_at", { ascending: false }),
       supabase.from("items").select("id, user_id, type"),
       supabase.from("customers").select("id, user_id"),
       supabase.from("orders").select("*").order("created_at", { ascending: false }),
       supabase.from("payments").select("*"),
       supabase.from("activity_log").select("*").order("created_at", { ascending: false }).limit(500),
+      supabase.from("reviews").select("*").order("created_at", { ascending: false }),
     ]);
     setData({
       profiles: profs.data || [], items: items.data || [], customers: custs.data || [],
       orders: ords.data || [], payments: pays.data || [], activity: acts.data || [],
+      reviews: revs.data || [],
     });
   }
 
@@ -106,6 +108,7 @@ function AdminShell({ session, profile }) {
     { id: "overview", label: "Overview" },
     { id: "users", label: "Users" },
     { id: "orders", label: "Orders" },
+    { id: "reviews", label: "Reviews" },
     { id: "activity", label: "Activity" },
   ];
 
@@ -127,6 +130,7 @@ function AdminShell({ session, profile }) {
       {page === "overview" && <Overview data={data} />}
       {page === "users" && <Users data={data} />}
       {page === "orders" && <Orders data={data} />}
+      {page === "reviews" && <Reviews data={data} />}
       {page === "activity" && <Activity data={data} />}
     </main>
   </div>;
@@ -432,6 +436,69 @@ function Orders({ data }) {
     </div>)}</div>
     {filtered.length === 0 && <div className="a-empty" style={{ marginTop: 20 }}>No orders match.</div>}
     {filtered.length > 200 && <div style={{ padding: "16px 0", color: "var(--a-t3)", fontSize: 11, fontFamily: "var(--afm)", textAlign: "center" }}>Showing first 200 of {filtered.length}</div>}
+  </div>;
+}
+
+// ══════════════════════════════════════════════════════════════
+// REVIEWS (platform-wide)
+// ══════════════════════════════════════════════════════════════
+function Reviews({ data }) {
+  const { reviews, profiles } = data;
+  const vendorMap = Object.fromEntries(profiles.map(p => [p.id, p.business_name || p.business_email]));
+  const [filter, setFilter] = useState("all");
+  const [search, setSearch] = useState("");
+
+  const filtered = reviews
+    .filter(r => {
+      if (filter === "reported") return r.is_reported;
+      if (filter === "clean") return !r.is_reported;
+      if (filter === "5") return r.rating === 5;
+      if (filter === "low") return r.rating <= 2;
+      return true;
+    })
+    .filter(r => {
+      const s = search.toLowerCase();
+      if (!s) return true;
+      return (vendorMap[r.user_id] || "").toLowerCase().includes(s) || (r.comment || "").toLowerCase().includes(s) || (r.reviewer_name || "").toLowerCase().includes(s);
+    });
+
+  const totalReported = reviews.filter(r => r.is_reported).length;
+  const avgRating = reviews.length > 0 ? (reviews.filter(r => !r.is_reported).reduce((s, r) => s + r.rating, 0) / Math.max(1, reviews.filter(r => !r.is_reported).length)).toFixed(2) : "—";
+
+  return <div>
+    <div className="admin-ph"><div className="adm-t">Reviews</div><div className="adm-s">{reviews.length} total · avg {avgRating} · {totalReported} reported</div></div>
+
+    <div className="kpi-grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))" }}>
+      <div className="kpi"><div className="kpi-l">Total Reviews</div><div className="kpi-v">{reviews.length}</div></div>
+      <div className="kpi"><div className="kpi-l">Platform Avg</div><div className="kpi-v">{avgRating}</div><div className="kpi-d">excluding reported</div></div>
+      <div className="kpi"><div className="kpi-l">5-Star</div><div className="kpi-v">{reviews.filter(r => r.rating === 5).length}</div></div>
+      <div className="kpi"><div className="kpi-l">Low (≤2)</div><div className="kpi-v">{reviews.filter(r => r.rating <= 2).length}</div></div>
+      <div className="kpi"><div className="kpi-l">Reported</div><div className="kpi-v" style={{ color: totalReported > 0 ? "var(--a-r)" : "inherit" }}>{totalReported}</div></div>
+    </div>
+
+    <div className="a-filterrow">
+      <div className="a-search"><span className="ic">{I.search}</span><input placeholder="Search vendor, reviewer, comment..." value={search} onChange={e => setSearch(e.target.value)} /></div>
+      <div className="a-tabs">
+        {[["all", "All"], ["clean", "Not Reported"], ["reported", "Reported"], ["5", "5-star"], ["low", "Low (≤2)"]].map(([v, l]) => <button key={v} className={`a-tab ${filter === v ? "act" : ""}`} onClick={() => setFilter(v)}>{l}</button>)}
+      </div>
+    </div>
+
+    {filtered.length === 0 ? <div className="a-empty">No reviews match.</div> :
+      <div className="a-card" style={{ padding: 18 }}>
+        {filtered.map(r => <div key={r.id} style={{ padding: "14px 0", borderBottom: "1px solid var(--a-bl)", opacity: r.is_reported ? 0.6 : 1 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6, flexWrap: "wrap", gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 1, color: "var(--a-am)" }}>{[1, 2, 3, 4, 5].map(n => <span key={n} style={{ color: n <= r.rating ? "var(--a-am)" : "var(--a-b)" }}>{I.star}</span>)}</div>
+              <span style={{ fontWeight: 600, fontSize: 13 }}>{vendorMap[r.user_id] || "Unknown vendor"}</span>
+              <span style={{ color: "var(--a-t3)", fontSize: 11.5, fontFamily: "var(--afm)" }}>{r.reviewer_name || "Anonymous"}</span>
+              {r.is_reported && <span className="a-badge a-bg-r">Reported</span>}
+            </div>
+            <span style={{ fontSize: 10.5, color: "var(--a-t3)", fontFamily: "var(--afm)" }}>{fmtDate(r.created_at)}</span>
+          </div>
+          {r.comment && <div style={{ fontSize: 12.5, color: "var(--a-t2)", lineHeight: 1.6, marginTop: 6 }}>{r.comment}</div>}
+        </div>)}
+      </div>
+    }
   </div>;
 }
 

@@ -10,7 +10,7 @@ const STEPS = [
   { key: "awaiting_payment", label: "Price Set" },
   { key: "payment_claimed", label: "You Paid" },
   { key: "confirmed", label: "Payment Confirmed" },
-  { key: "fulfilled", label: "Fulfilled" },
+  { key: "shipped", label: "Shipped" },
   { key: "completed", label: "Completed" },
 ];
 
@@ -61,6 +61,7 @@ export default function OrderStatus({ token }) {
   const cart = order.cart || [];
   const cartSubtotal = cart.reduce((s, i) => s + (i.price || 0) * i.qty, 0);
   const showBank = order.flow_status === "awaiting_payment" && vendor.bank_name && vendor.account_number;
+  const canReview = order.flow_status === "completed" && !order.reviewed_at;
 
   return <>
     <style>{CSS}</style>
@@ -88,8 +89,8 @@ export default function OrderStatus({ token }) {
             {order.flow_status === "awaiting_payment" && <div style={{ padding: 14, background: "var(--gl)", borderRadius: 10, fontSize: 13, lineHeight: 1.5, marginBottom: 16 }}>Please transfer <b>{fmt(order.total)}</b> to the account below, then click "I've Paid" to notify the vendor.</div>}
             {order.flow_status === "payment_claimed" && <div style={{ padding: 14, background: "var(--aml)", borderRadius: 10, fontSize: 13, lineHeight: 1.5, marginBottom: 16 }}>Waiting for the vendor to confirm your payment. This usually takes a few minutes to a few hours.</div>}
             {order.flow_status === "confirmed" && <div style={{ padding: 14, background: "var(--gl)", borderRadius: 10, fontSize: 13, lineHeight: 1.5, marginBottom: 16 }}>Your payment has been confirmed! The vendor is now preparing your order.</div>}
-            {order.flow_status === "fulfilled" && <div style={{ padding: 14, background: "var(--gl)", borderRadius: 10, fontSize: 13, lineHeight: 1.5, marginBottom: 16 }}>Your order has been fulfilled.</div>}
-            {order.flow_status === "completed" && <div style={{ padding: 14, background: "var(--gl)", borderRadius: 10, fontSize: 13, lineHeight: 1.5, marginBottom: 16 }}>Thank you! Your order is complete.</div>}
+            {order.flow_status === "shipped" && <div style={{ padding: 14, background: "var(--gl)", borderRadius: 10, fontSize: 13, lineHeight: 1.5, marginBottom: 16 }}>Your order has been shipped.</div>}
+            {order.flow_status === "completed" && !canReview && <div style={{ padding: 14, background: "var(--gl)", borderRadius: 10, fontSize: 13, lineHeight: 1.5, marginBottom: 16 }}>Thank you! Your order is complete.</div>}
           </>
         )}
 
@@ -119,6 +120,8 @@ export default function OrderStatus({ token }) {
           <div className="bank-row"><span className="lbl">Name</span><span className="val">{vendor.account_name}</span></div>
           <div className="bank-row" style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid rgba(0,0,0,0.08)" }}><span className="lbl">Amount</span><span className="val" style={{ color: "var(--g)", fontSize: 15 }}>{fmt(order.total)}</span></div>
         </div>}
+
+        {canReview && <ReviewForm order={order} token={token} onDone={(updatedOrder) => setOrder(updatedOrder)} />}
       </div>
 
       {order.flow_status === "awaiting_payment" && <div className="action-btn-wrap">
@@ -131,4 +134,52 @@ export default function OrderStatus({ token }) {
       </div>}
     </div></div>
   </>;
+}
+
+function ReviewForm({ order, token, onDone }) {
+  const [rating, setRating] = useState(0);
+  const [hovered, setHovered] = useState(0);
+  const [comment, setComment] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const submit = async (skip = false) => {
+    if (!skip && rating === 0) { setErr("Please select a rating or skip"); return; }
+    setBusy(true); setErr("");
+    try {
+      if (!skip) {
+        const { error } = await supabase.from("reviews").insert({
+          order_id: order.id,
+          user_id: order.user_id,
+          reviewer_name: order.customer_name,
+          rating,
+          comment: comment.trim() || null,
+        });
+        if (error) throw error;
+      }
+      const { data } = await supabase.from("orders").update({ reviewed_at: new Date().toISOString() }).eq("public_token", token).select().single();
+      if (data) onDone(data);
+    } catch (e) {
+      setErr(e.message || "Could not submit review");
+    }
+    setBusy(false);
+  };
+
+  return <div className="sect" style={{ background: "var(--gl)", padding: 18, borderRadius: 12, marginTop: 18, borderTop: "none" }}>
+    <div className="sect-title" style={{ color: "var(--g)", marginBottom: 12 }}>How was your experience?</div>
+    <div style={{ display: "flex", gap: 6, justifyContent: "center", marginBottom: 14 }}>
+      {[1, 2, 3, 4, 5].map(n => (
+        <button key={n} onClick={() => setRating(n)} onMouseEnter={() => setHovered(n)} onMouseLeave={() => setHovered(0)}
+          style={{ background: "none", border: "none", cursor: "pointer", padding: 4, color: (hovered || rating) >= n ? "var(--am)" : "var(--t3)", transition: "color .1s" }}>
+          <svg viewBox="0 0 24 24" fill="currentColor" width="34" height="34"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        </button>
+      ))}
+    </div>
+    <textarea className="ft" placeholder="Leave a comment (optional) \u2014 only the vendor will see this" value={comment} onChange={e => setComment(e.target.value)} style={{ background: "var(--s)", marginBottom: 10 }} />
+    {err && <div style={{ color: "var(--r)", fontSize: 12, marginBottom: 10, textAlign: "center" }}>{err}</div>}
+    <div style={{ display: "flex", gap: 8 }}>
+      <button className="btn btn-s" disabled={busy} onClick={() => submit(true)} style={{ flex: 1, justifyContent: "center" }}>Skip</button>
+      <button className="btn btn-p" disabled={busy} onClick={() => submit(false)} style={{ flex: 2, justifyContent: "center" }}>{busy ? "Submitting..." : "Submit Review"}</button>
+    </div>
+  </div>;
 }

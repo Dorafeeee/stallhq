@@ -244,7 +244,7 @@ function flowBadge(o) {
     if (o.flow_status === "awaiting_pricing") return "bg-r";
     if (o.flow_status === "payment_claimed") return "bg-r";
     if (o.flow_status === "awaiting_payment") return "bg-a";
-    if (o.flow_status === "confirmed" || o.flow_status === "fulfilled") return "bg-b";
+    if (o.flow_status === "confirmed" || o.flow_status === "shipped") return "bg-b";
     if (o.flow_status === "completed") return "bg-g";
     if (o.flow_status === "cancelled") return "bg-gr";
   }
@@ -549,8 +549,8 @@ function SFForm({ d, profile, setOrders, orders, setPayments, payments, customer
       <button className="btn btn-s" disabled={busy} onClick={() => updateFlow("awaiting_payment")}>Not Yet (revert)</button>
       <button className="btn btn-p" disabled={busy} onClick={() => updateFlow("confirmed", { status: "In Progress" })}>{busy ? "Saving..." : "Confirm Payment Received"}</button>
     </>}
-    {d.flow_status === "confirmed" && <button className="btn btn-p" disabled={busy} onClick={() => updateFlow("fulfilled")}>{busy ? "..." : "Mark as Fulfilled"}</button>}
-    {d.flow_status === "fulfilled" && <button className="btn btn-p" disabled={busy} onClick={() => updateFlow("completed", { status: "Completed" })}>{busy ? "..." : "Mark Completed"}</button>}
+    {d.flow_status === "confirmed" && <button className="btn btn-p" disabled={busy} onClick={() => updateFlow("shipped")}>{busy ? "..." : "Mark as Shipped"}</button>}
+    {d.flow_status === "shipped" && <button className="btn btn-p" disabled={busy} onClick={() => updateFlow("completed", { status: "Completed" })}>{busy ? "..." : "Mark Completed"}</button>}
   </div></div>;
 }
 
@@ -627,7 +627,14 @@ function IForm({ d, save, cancel }) {
 function StorePage({ session, profile, onProfile, items }) {
   const [f, sf] = useState({ about: profile.about || "", accepts_orders: profile.accepts_orders !== false, slug: profile.slug || "" });
   const set = (k, v) => sf(p => ({ ...p, [k]: v })); const [ok, setOk] = useState(false); const [busy, setBusy] = useState(false); const [copied, setCopied] = useState(false);
+  const [reviews, setReviews] = useState([]);
   const url = typeof window !== "undefined" ? `${window.location.origin}/shop/${profile.slug}` : `/shop/${profile.slug}`;
+
+  useEffect(() => { loadReviews(); }, []);
+  async function loadReviews() {
+    const { data } = await supabase.from("reviews").select("*").eq("user_id", session.user.id).order("created_at", { ascending: false });
+    setReviews(data || []);
+  }
 
   const save = async () => {
     setBusy(true);
@@ -637,14 +644,21 @@ function StorePage({ session, profile, onProfile, items }) {
   };
   const copy = () => { navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1500); };
   const share = () => { window.open(`https://wa.me/?text=${encodeURIComponent(`Check out my store: ${url}`)}`, "_blank"); };
+  const toggleReport = async (id, current) => {
+    const { data } = await supabase.from("reviews").update({ is_reported: !current }).eq("id", id).select().single();
+    if (data) setReviews(reviews.map(r => r.id === id ? data : r));
+  };
+
+  const activeReviews = reviews.filter(r => !r.is_reported);
+  const avgRating = activeReviews.length > 0 ? (activeReviews.reduce((s, r) => s + r.rating, 0) / activeReviews.length).toFixed(1) : null;
 
   return <div>
     <div className="ph"><div><div className="pt">Storefront</div><div className="ps">Your public shop page</div></div></div>
-    <div style={{ display: "grid", gap: 16, maxWidth: 540 }}>
+    <div style={{ display: "grid", gap: 16, maxWidth: 620 }}>
       <div className="card">
         <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>Your shareable link</div>
         <div className="share-link"><code>{url}</code></div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button className="btn btn-s btn-sm" onClick={copy}>{copied ? I.check : I.copy} {copied ? "Copied!" : "Copy link"}</button>
           <button className="btn btn-s btn-sm" onClick={share}>{I.wa} Share via WhatsApp</button>
           <a className="btn btn-s btn-sm" href={url} target="_blank" rel="noopener noreferrer">{I.link} Preview</a>
@@ -657,8 +671,28 @@ function StorePage({ session, profile, onProfile, items }) {
         <button className="btn btn-p" disabled={busy} onClick={save}>{busy ? "Saving..." : ok ? "Saved!" : "Save"}</button>
       </div>
       <div className="card">
-        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>What customers see</div>
-        <div style={{ fontSize: 12, color: "var(--t2)", lineHeight: 1.6 }}>Your catalog ({items.length} item{items.length !== 1 ? "s" : ""}) will be displayed publicly. Customers can add items to cart, enter their details, and place orders. You'll see new orders in the <b>Orders</b> tab marked "Awaiting Your Pricing."</div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+          <div style={{ fontWeight: 600, fontSize: 13 }}>Customer Reviews</div>
+          {avgRating && <div style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "var(--am)", fontWeight: 700, fontSize: 13 }}>{I.star} {avgRating} <span style={{ color: "var(--t3)", fontWeight: 500, fontSize: 12 }}>({activeReviews.length})</span></div>}
+        </div>
+        {reviews.length === 0 ? <div style={{ fontSize: 12.5, color: "var(--t3)", lineHeight: 1.6 }}>No reviews yet. Once you complete orders, customers can leave ratings and feedback here. Only aggregate ratings are shown publicly \u2014 individual comments are private to you.</div> :
+          <div>{reviews.map(r => <div key={r.id} style={{ padding: "14px 0", borderBottom: "1px solid var(--bl)", opacity: r.is_reported ? 0.5 : 1 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4, flexWrap: "wrap", gap: 6 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <div style={{ display: "flex", gap: 2, color: "var(--am)" }}>{[1, 2, 3, 4, 5].map(n => <span key={n} style={{ color: n <= r.rating ? "var(--am)" : "var(--b)" }}>{I.star}</span>)}</div>
+                <span style={{ fontSize: 12, fontWeight: 600 }}>{r.reviewer_name || "Anonymous"}</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 10.5, color: "var(--t3)" }}>{fmtDate(r.created_at)}</span>
+                <button className="btn btn-g btn-sm" onClick={() => toggleReport(r.id, r.is_reported)} style={{ padding: "3px 8px", fontSize: 10.5 }}>
+                  {r.is_reported ? "Unreport" : <>{I.flag} Report</>}
+                </button>
+              </div>
+            </div>
+            {r.comment && <div style={{ fontSize: 13, color: "var(--t2)", lineHeight: 1.5, marginTop: 4 }}>{r.comment}</div>}
+            {r.is_reported && <div style={{ fontSize: 10.5, color: "var(--r)", marginTop: 4, fontWeight: 600 }}>Reported \u2014 hidden from public average</div>}
+          </div>)}</div>
+        }
       </div>
     </div>
   </div>;

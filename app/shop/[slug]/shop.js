@@ -8,6 +8,7 @@ import { fmt, genToken } from "../../../lib/utils";
 export default function Shop({ slug }) {
   const [vendor, setVendor] = useState(null);
   const [items, setItems] = useState([]);
+  const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("All");
   const [cart, setCart] = useState([]);
@@ -21,6 +22,8 @@ export default function Shop({ slug }) {
       setVendor(vend);
       const { data: its } = await supabase.from("items").select("*").eq("user_id", vend.id);
       setItems(its || []);
+      const { data: st } = await supabase.rpc("get_vendor_stats", { vendor_user_id: vend.id });
+      if (st && st[0]) setStats(st[0]);
       setLoading(false);
     })();
   }, [slug]);
@@ -53,6 +56,11 @@ export default function Shop({ slug }) {
       <div className="shop-header">
         <div className="shop-header-in">
           <div className="shop-bn">{vendor.business_name}</div>
+          {stats && Number(stats.review_count) > 0 && <div style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 4, marginBottom: 8, color: "var(--am)", fontWeight: 600, fontSize: 14 }}>
+            {I.star}
+            <span>{Number(stats.avg_rating).toFixed(1)}</span>
+            <span style={{ color: "var(--t2)", fontWeight: 500 }}>· {stats.review_count} review{Number(stats.review_count) !== 1 ? "s" : ""}</span>
+          </div>}
           {vendor.about && <div className="shop-about">{vendor.about}</div>}
           {!vendor.accepts_orders && <div style={{ marginTop: 12, padding: "10px 14px", background: "var(--rl)", color: "var(--r)", borderRadius: 8, fontSize: 13, fontWeight: 600, display: "inline-block" }}>Currently not accepting orders</div>}
         </div>
