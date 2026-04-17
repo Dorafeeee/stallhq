@@ -301,11 +301,23 @@ function Users({ data }) {
       </div>
       <div className="a-card" style={{ marginTop: 20 }}>
         <div className="a-card-h"><div className="a-card-t">Recent Orders ({userOrders.length} shown)</div></div>
-        {userOrders.length === 0 ? <div className="a-empty">No orders yet</div> :
+        {userOrders.length === 0 ? <div className="a-empty">No orders yet</div> : <>
           <div className="a-tw"><table className="a-table"><thead><tr><th>Date</th><th>Customer</th><th>Item</th><th>Total</th><th>Source</th><th>Status</th></tr></thead>
             <tbody>{userOrders.map(o => <tr key={o.id}><td className="mono">{fmtDate(o.date)}</td><td>{o.customer_name || "Walk-in"}</td><td>{o.item_name}</td><td className="mono">{fmt(o.total)}</td><td><span className={`a-badge ${o.source === "storefront" ? "a-bg-p" : "a-bg-gr"}`}>{o.source || "manual"}</span></td><td><span className={`a-badge ${statusBadge(o)}`}>{o.status}</span></td></tr>)}</tbody>
           </table></div>
-        }
+          <div className="a-mcards">{userOrders.map(o => <div key={o.id} className="a-mcard">
+            <div className="a-mcard-top">
+              <div className="a-mcard-name">{o.customer_name || "Walk-in"}</div>
+              <span className={`a-badge ${statusBadge(o)}`}>{o.status}</span>
+            </div>
+            <div className="a-mcard-meta">{fmtDate(o.date)}</div>
+            <div style={{ fontSize: 12.5, marginTop: 4 }}>{o.item_name}</div>
+            <div className="a-mcard-stats">
+              <div className="a-mcard-stat"><span className="k">Total</span><span className="v">{fmt(o.total)}</span></div>
+              <div className="a-mcard-stat"><span className="k">Source</span><span className="v"><span className={`a-badge ${o.source === "storefront" ? "a-bg-p" : "a-bg-gr"}`}>{o.source || "manual"}</span></span></div>
+            </div>
+          </div>)}</div>
+        </>}
       </div>
     </div>;
   }
@@ -332,6 +344,20 @@ function Users({ data }) {
         </tr>)}</tbody>
       </table>
     </div></div>
+    <div className="a-mcards">{filtered.map(p => <div key={p.id} className="a-mcard" onClick={() => setSelected(p.id)}>
+      <div className="a-mcard-top">
+        <div className="a-mcard-name">{p.business_name}</div>
+        <span className={`a-badge ${p.business_type === "products" ? "a-bg-b" : p.business_type === "services" ? "a-bg-p" : "a-bg-gr"}`}>{p.business_type || "—"}</span>
+      </div>
+      <div className="a-mcard-meta">{p.business_email || "—"}</div>
+      <div className="a-mcard-stats">
+        <div className="a-mcard-stat"><span className="k">Revenue</span><span className="v pos">{fmt(p.revenue)}</span></div>
+        <div className="a-mcard-stat"><span className="k">Orders</span><span className="v">{p.orderCount}</span></div>
+        <div className="a-mcard-stat"><span className="k">Items</span><span className="v">{p.itemCount}</span></div>
+        <div className="a-mcard-stat"><span className="k">Joined</span><span className="v">{fmtDate(p.created_at)}</span></div>
+        <div className="a-mcard-stat"><span className="k">Active</span><span className="v">{p.lastActive ? relTime(p.lastActive) : "—"}</span></div>
+      </div>
+    </div>)}</div>
     {filtered.length === 0 && <div className="a-empty" style={{ marginTop: 20 }}>No users match your search.</div>}
   </div>;
 }
@@ -391,6 +417,19 @@ function Orders({ data }) {
         </tr>)}</tbody>
       </table>
     </div></div>
+    <div className="a-mcards">{filtered.slice(0, 200).map(o => <div key={o.id} className="a-mcard">
+      <div className="a-mcard-top">
+        <div className="a-mcard-name">{o.customer_name || "Walk-in"}</div>
+        <span className={`a-badge ${statusBadge(o)}`}>{o.status}</span>
+      </div>
+      <div className="a-mcard-meta">{vendorMap[o.user_id] || "—"} · {fmtDate(o.date)}</div>
+      <div style={{ fontSize: 12.5, marginTop: 4 }}>{o.item_name}</div>
+      <div className="a-mcard-stats">
+        <div className="a-mcard-stat"><span className="k">Total</span><span className="v">{fmt(o.total)}</span></div>
+        <div className="a-mcard-stat"><span className="k">Paid</span><span className="v pos">{fmt(paidFor(o.id))}</span></div>
+        <div className="a-mcard-stat"><span className="k">Source</span><span className="v"><span className={`a-badge ${o.source === "storefront" ? "a-bg-p" : "a-bg-gr"}`}>{o.source || "manual"}</span></span></div>
+      </div>
+    </div>)}</div>
     {filtered.length === 0 && <div className="a-empty" style={{ marginTop: 20 }}>No orders match.</div>}
     {filtered.length > 200 && <div style={{ padding: "16px 0", color: "var(--a-t3)", fontSize: 11, fontFamily: "var(--afm)", textAlign: "center" }}>Showing first 200 of {filtered.length}</div>}
   </div>;

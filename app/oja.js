@@ -270,7 +270,29 @@ function CatPage({ session, items, setItems, modal, setModal, search, setSearch,
       {biz === "both" && <div className="tabs" style={{ marginBottom: 0, borderBottom: "none" }}>{["All", "Product", "Service"].map(t => <button key={t} className={`tab ${tab === t ? "active" : ""}`} onClick={() => setTab(t)}>{t === "All" ? "All" : t + "s"}</button>)}</div>}
       <div className="sb-w" style={{ marginLeft: "auto" }}><span className="ic">{I.search}</span><input placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)} /></div>
     </div>
-    {filtered.length === 0 ? <div className="card"><div className="empty"><p>No items yet.</p></div></div> : <div className="card" style={{ padding: 0 }}><div className="tw"><table><thead><tr><th style={{ width: 48 }}></th><th>Name</th>{biz === "both" && <th>Type</th>}<th>Price</th>{showP && <th>Stock</th>}<th style={{ width: 70 }}></th></tr></thead><tbody>{filtered.map(item => <tr key={item.id}><td>{item.image ? <img className="ith" src={item.image} alt="" /> : <div className="ith" style={{ display: "flex", alignItems: "center", justifyContent: "center", color: "var(--t3)" }}>{I.cam}</div>}</td><td style={{ fontWeight: 500 }}>{item.name}{item.description && <div style={{ fontSize: 10.5, color: "var(--t3)", marginTop: 1 }}>{item.description.slice(0, 45)}</div>}</td>{biz === "both" && <td><span className={`badge ${item.type === "Product" ? "bg-b" : "bg-p"}`}>{item.type}</span></td>}<td>{item.price ? fmt(item.price) : <span style={{ color: "var(--t3)" }}>Varies</span>}</td>{showP && <td>{item.type === "Product" ? (item.stock ?? "\u2014") : "\u2014"}</td>}<td><div className="ar"><button className="ab" onClick={() => setModal({ t: "item", d: { ...item } })}>{I.edit}</button><button className="ab dng" onClick={() => del(item.id)}>{I.trash}</button></div></td></tr>)}</tbody></table></div></div>}
+    {filtered.length === 0 ? <div className="card"><div className="empty"><p>No items yet.</p></div></div> : <>
+      <div className="card" style={{ padding: 0 }}><div className="tw"><table><thead><tr><th style={{ width: 48 }}></th><th>Name</th>{biz === "both" && <th>Type</th>}<th>Price</th>{showP && <th>Stock</th>}<th style={{ width: 70 }}></th></tr></thead><tbody>{filtered.map(item => <tr key={item.id}><td>{item.image ? <img className="ith" src={item.image} alt="" /> : <div className="ith" style={{ display: "flex", alignItems: "center", justifyContent: "center", color: "var(--t3)" }}>{I.cam}</div>}</td><td style={{ fontWeight: 500 }}>{item.name}{item.description && <div style={{ fontSize: 10.5, color: "var(--t3)", marginTop: 1 }}>{item.description.slice(0, 45)}</div>}</td>{biz === "both" && <td><span className={`badge ${item.type === "Product" ? "bg-b" : "bg-p"}`}>{item.type}</span></td>}<td>{item.price ? fmt(item.price) : <span style={{ color: "var(--t3)" }}>Varies</span>}</td>{showP && <td>{item.type === "Product" ? (item.stock ?? "\u2014") : "\u2014"}</td>}<td><div className="ar"><button className="ab" onClick={() => setModal({ t: "item", d: { ...item } })}>{I.edit}</button><button className="ab dng" onClick={() => del(item.id)}>{I.trash}</button></div></td></tr>)}</tbody></table></div></div>
+      <div className="mcards">{filtered.map(item => <div key={item.id} className="mcard">
+        <div className="mcard-top">
+          <div className="mcard-tl">
+            {item.image ? <img className="mcard-thumb" src={item.image} alt="" /> : <div className="mcard-thumb" style={{ display: "flex", alignItems: "center", justifyContent: "center", color: "var(--t3)" }}>{I.cam}</div>}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="mcard-name">{item.name}</div>
+              {item.description && <div className="mcard-sub">{item.description.slice(0, 60)}</div>}
+            </div>
+          </div>
+          {biz === "both" && <span className={`badge ${item.type === "Product" ? "bg-b" : "bg-p"}`}>{item.type}</span>}
+        </div>
+        <div className="mcard-stats">
+          <div className="mcard-stat"><span className="k">Price</span><span className="v">{item.price ? fmt(item.price) : "Varies"}</span></div>
+          {showP && item.type === "Product" && <div className="mcard-stat"><span className="k">Stock</span><span className="v">{item.stock ?? "\u2014"}</span></div>}
+        </div>
+        <div className="mcard-actions">
+          <button className="btn btn-s btn-sm" onClick={(e) => { e.stopPropagation(); setModal({ t: "item", d: { ...item } }); }}>{I.edit} Edit</button>
+          <button className="btn btn-d btn-sm" onClick={(e) => { e.stopPropagation(); if (confirm("Delete this item?")) del(item.id); }}>{I.trash} Delete</button>
+        </div>
+      </div>)}</div>
+    </>}
     {modal?.t === "item" && <Modal title={modal.d.id ? "Edit Item" : "Add Item"} onClose={() => setModal(null)}><ItemForm d={modal.d} save={save} cancel={() => setModal(null)} biz={biz} /></Modal>}
   </div>;
 }
@@ -324,7 +346,26 @@ function CustPage({ session, customers, setCustomers, orders, payFor, modal, set
       </div>
     </div>}
     <div style={{ marginBottom: 18 }}><div className="sb-w"><span className="ic">{I.search}</span><input placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)} /></div></div>
-    {fil.length === 0 ? <div className="card"><div className="empty"><p>No customers yet.</p></div></div> : <div className="card" style={{ padding: 0 }}><div className="tw"><table><thead><tr><th>Name</th><th>Phone</th><th>Orders</th><th>Spent</th><th style={{ width: 90 }}></th></tr></thead><tbody>{fil.map(c => <tr key={c.id}><td style={{ fontWeight: 500 }}>{c.name}</td><td>{c.phone || "\u2014"}</td><td>{orders.filter(o => o.customer_id === c.id).length}</td><td>{fmt(spent(c.id))}</td><td><div className="ar">{c.phone && <a className="ab" href={`https://wa.me/234${c.phone.replace(/^0/, "")}`} target="_blank" rel="noopener noreferrer">{I.wa}</a>}<button className="ab" onClick={() => setModal({ t: "c", d: { ...c } })}>{I.edit}</button><button className="ab dng" onClick={() => del(c.id)}>{I.trash}</button></div></td></tr>)}</tbody></table></div></div>}
+    {fil.length === 0 ? <div className="card"><div className="empty"><p>No customers yet.</p></div></div> : <>
+      <div className="card" style={{ padding: 0 }}><div className="tw"><table><thead><tr><th>Name</th><th>Phone</th><th>Orders</th><th>Spent</th><th style={{ width: 90 }}></th></tr></thead><tbody>{fil.map(c => <tr key={c.id}><td style={{ fontWeight: 500 }}>{c.name}</td><td>{c.phone || "\u2014"}</td><td>{orders.filter(o => o.customer_id === c.id).length}</td><td>{fmt(spent(c.id))}</td><td><div className="ar">{c.phone && <a className="ab" href={`https://wa.me/234${c.phone.replace(/^0/, "")}`} target="_blank" rel="noopener noreferrer">{I.wa}</a>}<button className="ab" onClick={() => setModal({ t: "c", d: { ...c } })}>{I.edit}</button><button className="ab dng" onClick={() => del(c.id)}>{I.trash}</button></div></td></tr>)}</tbody></table></div></div>
+      <div className="mcards">{fil.map(c => <div key={c.id} className="mcard">
+        <div className="mcard-top">
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="mcard-name">{c.name}</div>
+            {c.phone && <div className="mcard-sub">{c.phone}</div>}
+          </div>
+        </div>
+        <div className="mcard-stats">
+          <div className="mcard-stat"><span className="k">Orders</span><span className="v">{orders.filter(o => o.customer_id === c.id).length}</span></div>
+          <div className="mcard-stat"><span className="k">Spent</span><span className="v pos">{fmt(spent(c.id))}</span></div>
+        </div>
+        <div className="mcard-actions">
+          {c.phone && <a className="btn btn-s btn-sm" href={`https://wa.me/234${c.phone.replace(/^0/, "")}`} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}>{I.wa} WhatsApp</a>}
+          <button className="btn btn-s btn-sm" onClick={() => setModal({ t: "c", d: { ...c } })}>{I.edit} Edit</button>
+          <button className="btn btn-d btn-sm" onClick={() => { if (confirm("Delete this customer?")) del(c.id); }}>{I.trash}</button>
+        </div>
+      </div>)}</div>
+    </>}
     {modal?.t === "c" && <Modal title={modal.d.id ? "Edit Customer" : "Add Customer"} onClose={() => setModal(null)}><CForm d={modal.d} save={save} cancel={() => setModal(null)} /></Modal>}
   </div>;
 }
@@ -378,7 +419,24 @@ function OrdPage({ session, orders, setOrders, customers, items, payments, setPa
       </div>
       <div className="sb-w" style={{ marginLeft: "auto" }}><span className="ic">{I.search}</span><input placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)} /></div>
     </div>
-    {fil.length === 0 ? <div className="card"><div className="empty"><p>{tab === "Action Needed" ? "No orders need your action \ud83c\udf89" : "No orders found."}</p></div></div> : <div className="card" style={{ padding: 0 }}><div className="tw"><table><thead><tr><th>Date</th><th>Customer</th><th>Item</th><th>Total</th><th>Paid</th><th>Status</th><th style={{ width: 70 }}></th></tr></thead><tbody>{fil.map(o => { const pd = paidAmount(o.id); const bl = Math.max(0, Number(o.total || 0) - pd); return <tr key={o.id}><td style={{ fontSize: 11, color: "var(--t2)" }}>{fmtDate(o.date)}{o.source === "storefront" && <div style={{ fontSize: 9, color: "var(--g)", marginTop: 1 }}>{I.store} storefront</div>}</td><td style={{ fontWeight: 500 }}>{o.customer_name || "Walk-in"}{o.customer_phone && <div style={{ fontSize: 10.5, color: "var(--t3)", marginTop: 1 }}>{o.customer_phone}</div>}</td><td>{o.item_name}</td><td>{o.total ? fmt(o.total) : <span style={{ color: "var(--t3)" }}>\u2014</span>}</td><td style={{ color: "var(--g)", fontWeight: 600 }}>{pd > 0 ? fmt(pd) : <span style={{ color: "var(--t3)", fontWeight: 400 }}>\u2014</span>}</td><td><span className={`badge ${flowBadge(o)}`}>{flowLabel(o)}</span></td><td><div className="ar"><button className="ab" onClick={() => setModal({ t: o.source === "storefront" ? "sf" : "o", d: { ...o, _payments: payFor(o.id) } })}>{I.edit}</button><button className="ab dng" onClick={() => del(o.id)}>{I.trash}</button></div></td></tr>; })}</tbody></table></div></div>}
+    {fil.length === 0 ? <div className="card"><div className="empty"><p>{tab === "Action Needed" ? "No orders need your action \ud83c\udf89" : "No orders found."}</p></div></div> : <>
+      <div className="card" style={{ padding: 0 }}><div className="tw"><table><thead><tr><th>Date</th><th>Customer</th><th>Item</th><th>Total</th><th>Paid</th><th>Status</th><th style={{ width: 70 }}></th></tr></thead><tbody>{fil.map(o => { const pd = paidAmount(o.id); const bl = Math.max(0, Number(o.total || 0) - pd); return <tr key={o.id}><td style={{ fontSize: 11, color: "var(--t2)" }}>{fmtDate(o.date)}{o.source === "storefront" && <div style={{ fontSize: 9, color: "var(--g)", marginTop: 1 }}>{I.store} storefront</div>}</td><td style={{ fontWeight: 500 }}>{o.customer_name || "Walk-in"}{o.customer_phone && <div style={{ fontSize: 10.5, color: "var(--t3)", marginTop: 1 }}>{o.customer_phone}</div>}</td><td>{o.item_name}</td><td>{o.total ? fmt(o.total) : <span style={{ color: "var(--t3)" }}>\u2014</span>}</td><td style={{ color: "var(--g)", fontWeight: 600 }}>{pd > 0 ? fmt(pd) : <span style={{ color: "var(--t3)", fontWeight: 400 }}>\u2014</span>}</td><td><span className={`badge ${flowBadge(o)}`}>{flowLabel(o)}</span></td><td><div className="ar"><button className="ab" onClick={() => setModal({ t: o.source === "storefront" ? "sf" : "o", d: { ...o, _payments: payFor(o.id) } })}>{I.edit}</button><button className="ab dng" onClick={() => del(o.id)}>{I.trash}</button></div></td></tr>; })}</tbody></table></div></div>
+      <div className="mcards">{fil.map(o => { const pd = paidAmount(o.id); return <div key={o.id} className="mcard" onClick={() => setModal({ t: o.source === "storefront" ? "sf" : "o", d: { ...o, _payments: payFor(o.id) } })}>
+        <div className="mcard-top">
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="mcard-name">{o.customer_name || "Walk-in"}</div>
+            {o.customer_phone && <div className="mcard-sub">{o.customer_phone}</div>}
+          </div>
+          <span className={`badge ${flowBadge(o)}`}>{flowLabel(o)}</span>
+        </div>
+        <div className="mcard-meta">{fmtDate(o.date)}{o.source === "storefront" && " \u2022 Storefront"}</div>
+        <div style={{ fontSize: 13, marginTop: 6, color: "var(--t2)" }}>{o.item_name}</div>
+        <div className="mcard-stats">
+          <div className="mcard-stat"><span className="k">Total</span><span className="v">{o.total ? fmt(o.total) : "\u2014"}</span></div>
+          <div className="mcard-stat"><span className="k">Paid</span><span className="v pos">{pd > 0 ? fmt(pd) : "\u2014"}</span></div>
+        </div>
+      </div>; })}</div>
+    </>}
     {modal?.t === "o" && <Modal title={modal.d.id ? "Edit" : "New"} onClose={() => setModal(null)}><OForm d={modal.d} customers={customers} items={items} save={saveOrder} cancel={() => setModal(null)} /></Modal>}
     {modal?.t === "sf" && <Modal title="Storefront Order" onClose={() => setModal(null)} wide><SFForm d={modal.d} profile={profile} setOrders={setOrders} orders={orders} setPayments={setPayments} payments={payments} customers={customers} setCustomers={setCustomers} session={session} close={() => setModal(null)} /></Modal>}
   </div>;
@@ -528,7 +586,27 @@ function InvPage({ session, profile, invoices, setInvoices, orders, customers, p
   return <div>
     <div className="ph"><div><div className="pt">Invoices</div><div className="ps">{invoices.length}</div></div><button className="btn btn-p" onClick={() => setModal({ t: "i", d: { invoice_no: `INV-${String(invoices.length + 1).padStart(3, "0")}`, date: today(), due_date: null, customer_name: "", customer_phone: "", customer_email: "", items: [{ description: "", qty: 1, price: 0 }], amount_paid: 0, notes: "" } })}>{I.plus} New</button></div>
     {un.length > 0 && <div className="card" style={{ marginBottom: 18, background: "var(--aml)", border: "1px solid #eed9a0" }}><div style={{ fontWeight: 600, fontSize: 12, marginBottom: 6 }}>Quick Invoice</div><div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>{un.slice(0, 5).map(o => <button key={o.id} className="btn btn-s btn-sm" onClick={() => setModal({ t: "i", d: mkI(o) })}>{o.customer_name || "Walk-in"} \u2014 {o.item_name}</button>)}</div></div>}
-    {invoices.length === 0 ? <div className="card"><div className="empty"><p>No invoices yet.</p></div></div> : <div className="card" style={{ padding: 0 }}><div className="tw"><table><thead><tr><th>No.</th><th>Date</th><th>Customer</th><th>Total</th><th>Balance</th><th style={{ width: 90 }}></th></tr></thead><tbody>{invoices.map(inv => { const sub = (inv.items || []).reduce((s, i) => s + i.qty * i.price, 0); const bl = sub - (inv.amount_paid || 0); return <tr key={inv.id}><td style={{ fontWeight: 600, fontFamily: "var(--fm)", fontSize: 11 }}>{inv.invoice_no}</td><td>{fmtDate(inv.date)}</td><td>{inv.customer_name}</td><td>{fmt(sub)}</td><td><span className={`badge ${bl <= 0 ? "bg-g" : "bg-r"}`}>{bl <= 0 ? "Paid" : fmt(bl)}</span></td><td><div className="ar"><button className="ab" onClick={() => setVw(inv.id)}>{I.search}</button><button className="ab" onClick={() => setModal({ t: "i", d: { ...inv } })}>{I.edit}</button><button className="ab dng" onClick={() => del(inv.id)}>{I.trash}</button></div></td></tr>; })}</tbody></table></div></div>}
+    {invoices.length === 0 ? <div className="card"><div className="empty"><p>No invoices yet.</p></div></div> : <>
+      <div className="card" style={{ padding: 0 }}><div className="tw"><table><thead><tr><th>No.</th><th>Date</th><th>Customer</th><th>Total</th><th>Balance</th><th style={{ width: 90 }}></th></tr></thead><tbody>{invoices.map(inv => { const sub = (inv.items || []).reduce((s, i) => s + i.qty * i.price, 0); const bl = sub - (inv.amount_paid || 0); return <tr key={inv.id}><td style={{ fontWeight: 600, fontFamily: "var(--fm)", fontSize: 11 }}>{inv.invoice_no}</td><td>{fmtDate(inv.date)}</td><td>{inv.customer_name}</td><td>{fmt(sub)}</td><td><span className={`badge ${bl <= 0 ? "bg-g" : "bg-r"}`}>{bl <= 0 ? "Paid" : fmt(bl)}</span></td><td><div className="ar"><button className="ab" onClick={() => setVw(inv.id)}>{I.search}</button><button className="ab" onClick={() => setModal({ t: "i", d: { ...inv } })}>{I.edit}</button><button className="ab dng" onClick={() => del(inv.id)}>{I.trash}</button></div></td></tr>; })}</tbody></table></div></div>
+      <div className="mcards">{invoices.map(inv => { const sub = (inv.items || []).reduce((s, i) => s + i.qty * i.price, 0); const bl = sub - (inv.amount_paid || 0); return <div key={inv.id} className="mcard">
+        <div className="mcard-top">
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="mcard-name">{inv.customer_name}</div>
+            <div className="mcard-sub" style={{ fontFamily: "var(--fm)" }}>{inv.invoice_no} \u00b7 {fmtDate(inv.date)}</div>
+          </div>
+          <span className={`badge ${bl <= 0 ? "bg-g" : "bg-r"}`}>{bl <= 0 ? "Paid" : fmt(bl)}</span>
+        </div>
+        <div className="mcard-stats">
+          <div className="mcard-stat"><span className="k">Total</span><span className="v">{fmt(sub)}</span></div>
+          <div className="mcard-stat"><span className="k">Paid</span><span className="v pos">{fmt(inv.amount_paid || 0)}</span></div>
+        </div>
+        <div className="mcard-actions">
+          <button className="btn btn-s btn-sm" onClick={() => setVw(inv.id)}>{I.search} View</button>
+          <button className="btn btn-s btn-sm" onClick={() => setModal({ t: "i", d: { ...inv } })}>{I.edit} Edit</button>
+          <button className="btn btn-d btn-sm" onClick={() => { if (confirm("Delete this invoice?")) del(inv.id); }}>{I.trash}</button>
+        </div>
+      </div>; })}</div>
+    </>}
     {modal?.t === "i" && <Modal title="Invoice" onClose={() => setModal(null)}><IForm d={modal.d} save={save} cancel={() => setModal(null)} /></Modal>}
   </div>;
 }
