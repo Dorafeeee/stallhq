@@ -377,7 +377,7 @@ function CForm({ d, save, cancel }) {
 // ══════════════════════════════════════════════════════════════
 // ORDERS (with storefront flow)
 // ══════════════════════════════════════════════════════════════
-function OrdPage({ session, orders, setOrders, customers, items, payments, setPayments, payFor, paidAmount, modal, setModal, search, setSearch, ordL, profile }) {
+function OrdPage({ session, orders, setOrders, customers, setCustomers, items, payments, setPayments, payFor, paidAmount, modal, setModal, search, setSearch, ordL, profile }) {
   const [tab, setTab] = useState("Action Needed");
 
   const actionNeeded = (o) => o.flow_status === "awaiting_pricing" || o.flow_status === "payment_claimed";
