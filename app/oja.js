@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase";
 import { CSS } from "../lib/styles";
 import { I, OjaLogo, OjaLogoSm } from "../lib/icons";
-import { uid, fmt, fmtDate, today, STATUSES, PAY_METHODS, FLOW_LABELS, compressImg, slugify } from "../lib/utils";
+import { uid, fmt, fmtDate, today, STATUSES, PAY_METHODS, FLOW_LABELS, compressImg, slugify, normalizePhone } from "../lib/utils";
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -291,8 +291,38 @@ function CustPage({ session, customers, setCustomers, orders, payFor, modal, set
   };
   const del = async (id) => { await supabase.from("customers").delete().eq("id", id); setCustomers(customers.filter(c => c.id !== id)); };
   const spent = (id) => orders.filter(o => o.customer_id === id && o.status !== "Cancelled").reduce((s, o) => s + payFor(o.id).reduce((ps, p) => ps + Number(p.amount), 0), 0);
+
+  // Find storefront orders whose customer hasn't been added yet
+  const orphanOrders = orders.filter(o => o.source === "storefront" && !o.customer_id && o.customer_phone);
+  const uniqueOrphans = Array.from(new Map(orphanOrders.map(o => [normalizePhone(o.customer_phone), o])).values());
+
+  const importAll = async () => {
+    for (const o of uniqueOrphans) {
+      const existing = customers.find(c => c.phone && normalizePhone(c.phone) === normalizePhone(o.customer_phone));
+      let custId = existing?.id;
+      if (!existing) {
+        const { data } = await supabase.from("customers").insert({
+          user_id: session.user.id,
+          name: o.customer_name || "Storefront Customer",
+          phone: o.customer_phone,
+          address: o.delivery_address || null,
+        }).select().single();
+        if (data) { setCustomers(prev => [data, ...prev]); custId = data.id; }
+      }
+      if (custId) await supabase.from("orders").update({ customer_id: custId }).eq("id", o.id);
+    }
+    // refresh local orders state to reflect new customer_id links (reload from parent would be ideal; user can refresh)
+    window.location.reload();
+  };
+
   return <div>
     <div className="ph"><div><div className="pt">Customers</div><div className="ps">{customers.length}</div></div><button className="btn btn-p" onClick={() => setModal({ t: "c", d: { name: "", phone: "", email: "", address: "", notes: "" } })}>{I.plus} Add</button></div>
+    {uniqueOrphans.length > 0 && <div className="card" style={{ marginBottom: 18, background: "var(--aml)", border: "1px solid #eed9a0" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+        <div><div style={{ fontWeight: 700, fontSize: 13, marginBottom: 2 }}>{uniqueOrphans.length} storefront customer{uniqueOrphans.length !== 1 ? "s" : ""} not yet saved</div><div style={{ fontSize: 12, color: "var(--t2)" }}>Import customers from past storefront orders</div></div>
+        <button className="btn btn-p btn-sm" onClick={importAll}>Import all</button>
+      </div>
+    </div>}
     <div style={{ marginBottom: 18 }}><div className="sb-w"><span className="ic">{I.search}</span><input placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)} /></div></div>
     {fil.length === 0 ? <div className="card"><div className="empty"><p>No customers yet.</p></div></div> : <div className="card" style={{ padding: 0 }}><div className="tw"><table><thead><tr><th>Name</th><th>Phone</th><th>Orders</th><th>Spent</th><th style={{ width: 90 }}></th></tr></thead><tbody>{fil.map(c => <tr key={c.id}><td style={{ fontWeight: 500 }}>{c.name}</td><td>{c.phone || "\u2014"}</td><td>{orders.filter(o => o.customer_id === c.id).length}</td><td>{fmt(spent(c.id))}</td><td><div className="ar">{c.phone && <a className="ab" href={`https://wa.me/234${c.phone.replace(/^0/, "")}`} target="_blank" rel="noopener noreferrer">{I.wa}</a>}<button className="ab" onClick={() => setModal({ t: "c", d: { ...c } })}>{I.edit}</button><button className="ab dng" onClick={() => del(c.id)}>{I.trash}</button></div></td></tr>)}</tbody></table></div></div>}
     {modal?.t === "c" && <Modal title={modal.d.id ? "Edit Customer" : "Add Customer"} onClose={() => setModal(null)}><CForm d={modal.d} save={save} cancel={() => setModal(null)} /></Modal>}
@@ -346,7 +376,7 @@ function OrdPage({ session, orders, setOrders, customers, items, payments, setPa
     </div>
     {fil.length === 0 ? <div className="card"><div className="empty"><p>{tab === "Action Needed" ? "No orders need your action \ud83c\udf89" : "No orders found."}</p></div></div> : <div className="card" style={{ padding: 0 }}><div className="tw"><table><thead><tr><th>Date</th><th>Customer</th><th>Item</th><th>Total</th><th>Paid</th><th>Status</th><th style={{ width: 70 }}></th></tr></thead><tbody>{fil.map(o => { const pd = paidAmount(o.id); const bl = Math.max(0, Number(o.total || 0) - pd); return <tr key={o.id}><td style={{ fontSize: 11, color: "var(--t2)" }}>{fmtDate(o.date)}{o.source === "storefront" && <div style={{ fontSize: 9, color: "var(--g)", marginTop: 1 }}>{I.store} storefront</div>}</td><td style={{ fontWeight: 500 }}>{o.customer_name || "Walk-in"}{o.customer_phone && <div style={{ fontSize: 10.5, color: "var(--t3)", marginTop: 1 }}>{o.customer_phone}</div>}</td><td>{o.item_name}</td><td>{o.total ? fmt(o.total) : <span style={{ color: "var(--t3)" }}>\u2014</span>}</td><td style={{ color: "var(--g)", fontWeight: 600 }}>{pd > 0 ? fmt(pd) : <span style={{ color: "var(--t3)", fontWeight: 400 }}>\u2014</span>}</td><td><span className={`badge ${flowBadge(o)}`}>{flowLabel(o)}</span></td><td><div className="ar"><button className="ab" onClick={() => setModal({ t: o.source === "storefront" ? "sf" : "o", d: { ...o, _payments: payFor(o.id) } })}>{I.edit}</button><button className="ab dng" onClick={() => del(o.id)}>{I.trash}</button></div></td></tr>; })}</tbody></table></div></div>}
     {modal?.t === "o" && <Modal title={modal.d.id ? "Edit" : "New"} onClose={() => setModal(null)}><OForm d={modal.d} customers={customers} items={items} save={saveOrder} cancel={() => setModal(null)} /></Modal>}
-    {modal?.t === "sf" && <Modal title="Storefront Order" onClose={() => setModal(null)} wide><SFForm d={modal.d} profile={profile} setOrders={setOrders} orders={orders} setPayments={setPayments} payments={payments} session={session} close={() => setModal(null)} /></Modal>}
+    {modal?.t === "sf" && <Modal title="Storefront Order" onClose={() => setModal(null)} wide><SFForm d={modal.d} profile={profile} setOrders={setOrders} orders={orders} setPayments={setPayments} payments={payments} customers={customers} setCustomers={setCustomers} session={session} close={() => setModal(null)} /></Modal>}
   </div>;
 }
 
@@ -370,17 +400,42 @@ function OForm({ d, customers, items, save, cancel }) {
 }
 
 // Storefront order form - the flow-aware one
-function SFForm({ d, profile, setOrders, orders, setPayments, payments, session, close }) {
+function SFForm({ d, profile, setOrders, orders, setPayments, payments, customers, setCustomers, session, close }) {
   const [busy, setBusy] = useState(false);
   const [total, setTotal] = useState(d.total || "");
   const [note, setNote] = useState("");
   const paid = (d._payments || []).reduce((s, p) => s + Number(p.amount), 0);
+
+  // Find or create customer from the order's info
+  const upsertCustomer = async () => {
+    if (!d.customer_phone) return null;
+    // If order already linked to a customer, return that id
+    if (d.customer_id) return d.customer_id;
+    // Check if a customer with this phone already exists for this vendor
+    const existing = customers.find(c => c.phone && normalizePhone(c.phone) === normalizePhone(d.customer_phone));
+    if (existing) return existing.id;
+    // Create new
+    const { data: newCust } = await supabase.from("customers").insert({
+      user_id: session.user.id,
+      name: d.customer_name || "Storefront Customer",
+      phone: d.customer_phone,
+      address: d.delivery_address || null,
+      notes: d.notes ? `From storefront order: ${d.notes}` : null,
+    }).select().single();
+    if (newCust) setCustomers([newCust, ...customers]);
+    return newCust?.id || null;
+  };
 
   const updateFlow = async (newStatus, extra = {}) => {
     setBusy(true);
     const payload = { flow_status: newStatus, ...extra };
     if (newStatus === "awaiting_payment" && total) payload.total = Number(total);
     if (newStatus === "confirmed") payload.payment_confirmed_at = new Date().toISOString();
+    // Create or link customer when sending the invoice (first vendor action on the order)
+    if (newStatus === "awaiting_payment") {
+      const custId = await upsertCustomer();
+      if (custId) payload.customer_id = custId;
+    }
     const { data } = await supabase.from("orders").update(payload).eq("id", d.id).select().single();
     if (data) {
       setOrders(orders.map(o => o.id === data.id ? data : o));
