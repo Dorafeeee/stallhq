@@ -667,7 +667,10 @@ function OForm({ d, customers, items, save, cancel }) {
 // Storefront order form - the flow-aware one
 function SFForm({ d, profile, setOrders, orders, setPayments, payments, customers, setCustomers, session, reload, close }) {
   const [busy, setBusy] = useState(false);
-  const [total, setTotal] = useState(d.total || "");
+  const cartForDefault = d.cart || [];
+  const cartSubtotal = cartForDefault.reduce((s, i) => s + (i.price || 0) * i.qty, 0);
+  const suggested = d.total || (cartSubtotal + (d.delivery_fee || 0));
+  const [total, setTotal] = useState(suggested || "");
   const [note, setNote] = useState("");
   const paid = (d._payments || []).reduce((s, p) => s + Number(p.amount), 0);
 
@@ -746,6 +749,12 @@ function SFForm({ d, profile, setOrders, orders, setPayments, payments, customer
 
     <div className="fg"><label className="fl">Customer</label><div style={{ fontSize: 13, fontWeight: 600 }}>{d.customer_name}</div><div style={{ fontSize: 12, color: "var(--t2)" }}>{d.customer_phone}</div></div>
     {d.delivery_address && <div className="fg"><label className="fl">Delivery Address</label><div style={{ fontSize: 13 }}>{d.delivery_address}</div></div>}
+    {d.delivery_zone_name && <div className="fg"><label className="fl">Delivery Zone</label>
+      <div style={{ fontSize: 13, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <span>{d.delivery_zone_name}</span>
+        {d.delivery_fee > 0 ? <span className="badge bg-g">{fmt(d.delivery_fee)}</span> : d.delivery_zone_name.startsWith("Other") ? <span className="badge bg-a">Fee to be set</span> : null}
+      </div>
+    </div>}
 
     <div className="fg"><label className="fl">Items Ordered</label>
       <div className="pl">{cart.map((it, i) => <div className="pe" key={i}><span style={{ fontWeight: 500 }}>{it.name}</span><span style={{ color: "var(--t2)" }}>\u00d7 {it.qty}</span><span className="amt">{it.price ? fmt(it.price * it.qty) : "TBD"}</span></div>)}</div>
@@ -754,8 +763,10 @@ function SFForm({ d, profile, setOrders, orders, setPayments, payments, customer
 
     {d.flow_status === "awaiting_pricing" && <div style={{ padding: 14, background: "var(--aml)", borderRadius: 10, marginTop: 10 }}>
       <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 8 }}>Set the final price</div>
-      <div style={{ fontSize: 11.5, color: "var(--t2)", marginBottom: 10 }}>Include delivery fees, any size/variant adjustments, or discounts. Customer will see this amount on their order page.</div>
-      <input className="fi" type="number" placeholder={`Item subtotal: ${fmt(cartTotal)}`} value={total} onChange={e => setTotal(e.target.value)} />
+      <div style={{ fontSize: 11.5, color: "var(--t2)", marginBottom: 10 }}>
+        {d.delivery_fee > 0 ? `Suggested: ${fmt(cartTotal + (d.delivery_fee || 0))} (items ${fmt(cartTotal)} + delivery ${fmt(d.delivery_fee)}). Adjust if needed.` : "Include delivery fees, any size/variant adjustments, or discounts. Customer will see this amount on their order page."}
+      </div>
+      <input className="fi" type="number" placeholder={`Suggested: ${fmt(cartTotal + (d.delivery_fee || 0))}`} value={total} onChange={e => setTotal(e.target.value)} />
     </div>}
 
     {d.flow_status === "payment_claimed" && <div style={{ padding: 14, background: "var(--aml)", borderRadius: 10, marginTop: 10 }}>
@@ -928,13 +939,95 @@ function StorePage({ session, profile, onProfile, items }) {
 function SettPage({ session, profile, onProfile }) {
   const [f, sf] = useState({ business_name: profile.business_name, business_phone: profile.business_phone || "", business_email: profile.business_email || "", bank_name: profile.bank_name || "", account_number: profile.account_number || "", account_name: profile.account_name || "", business_type: profile.business_type });
   const set = (k, v) => sf(p => ({ ...p, [k]: v })); const [ok, setOk] = useState(false); const [busy, setBusy] = useState(false);
+  const [zones, setZones] = useState([]);
+  const [newZone, setNewZone] = useState({ name: "", price: "" });
+  const [zonesBusy, setZonesBusy] = useState(false);
+
+  const showZones = f.business_type === "products" || f.business_type === "both";
+
+  useEffect(() => { loadZones(); }, []);
+  async function loadZones() {
+    const { data } = await supabase.from("delivery_zones").select("*").eq("user_id", session.user.id).order("sort_order", { ascending: true });
+    setZones(data || []);
+  }
+
   const save = async () => { setBusy(true); const { data } = await supabase.from("profiles").update(f).eq("id", session.user.id).select().single(); setBusy(false); if (data) { onProfile(data); setOk(true); setTimeout(() => setOk(false), 2000); } };
+
+  const addZone = async () => {
+    if (!newZone.name.trim() || !newZone.price || Number(newZone.price) < 0) return;
+    setZonesBusy(true);
+    const maxOrder = zones.length > 0 ? Math.max(...zones.map(z => z.sort_order || 0)) : 0;
+    const { data } = await supabase.from("delivery_zones").insert({
+      user_id: session.user.id,
+      name: newZone.name.trim(),
+      price: Number(newZone.price),
+      sort_order: maxOrder + 1,
+    }).select().single();
+    if (data) setZones([...zones, data]);
+    setNewZone({ name: "", price: "" });
+    setZonesBusy(false);
+  };
+  const updateZone = async (id, changes) => {
+    const { data } = await supabase.from("delivery_zones").update(changes).eq("id", id).select().single();
+    if (data) setZones(zones.map(z => z.id === id ? data : z));
+  };
+  const deleteZone = async (id) => {
+    if (!confirm("Delete this delivery zone?")) return;
+    await supabase.from("delivery_zones").delete().eq("id", id);
+    setZones(zones.filter(z => z.id !== id));
+  };
+
   return <div>
     <div className="ph"><div><div className="pt">Settings</div><div className="ps">{session.user.email}</div></div></div>
-    <div style={{ display: "grid", gap: 16, maxWidth: 460 }}>
+    <div style={{ display: "grid", gap: 16, maxWidth: 560 }}>
       <div className="card"><div style={{ fontWeight: 600, fontSize: 13, marginBottom: 14 }}>Business</div><div className="fg"><label className="fl">Name</label><input className="fi" value={f.business_name} onChange={e => set("business_name", e.target.value)} /></div><div className="fr"><div className="fg"><label className="fl">Phone</label><input className="fi" value={f.business_phone} onChange={e => set("business_phone", e.target.value)} /></div><div className="fg"><label className="fl">Email</label><input className="fi" value={f.business_email} onChange={e => set("business_email", e.target.value)} /></div></div><div className="fg"><label className="fl">Type</label><select className="fs" value={f.business_type} onChange={e => set("business_type", e.target.value)}><option value="products">Products only</option><option value="services">Services only</option><option value="both">Products & Services</option></select></div></div>
       <div className="card"><div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>Bank Account</div><div style={{ fontSize: 11.5, color: "var(--t3)", marginBottom: 14 }}>Shown on invoices and customer order pages</div><div className="fg"><label className="fl">Bank</label><input className="fi" placeholder="e.g. GTBank, OPay, Kuda" value={f.bank_name} onChange={e => set("bank_name", e.target.value)} /></div><div className="fr"><div className="fg"><label className="fl">Account No.</label><input className="fi" value={f.account_number} onChange={e => set("account_number", e.target.value)} /></div><div className="fg"><label className="fl">Account Name</label><input className="fi" value={f.account_name} onChange={e => set("account_name", e.target.value)} /></div></div></div>
       <button className="btn btn-p" onClick={save} disabled={busy} style={{ justifySelf: "start" }}>{busy ? "Saving..." : ok ? "Saved!" : "Save"}</button>
+
+      {showZones && <div className="card">
+        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>Delivery Zones</div>
+        <div style={{ fontSize: 11.5, color: "var(--t3)", marginBottom: 16, lineHeight: 1.5 }}>
+          Set delivery fees by location. Customers pick a zone at checkout; the fee gets added automatically. If you don't add zones, customers just enter their address and you set the fee manually. An "Other" option is always shown so customers in areas you haven't listed can still order.
+        </div>
+
+        {zones.length > 0 && <div style={{ marginBottom: 16 }}>
+          {zones.map(z => <ZoneRow key={z.id} zone={z} onSave={(c) => updateZone(z.id, c)} onDelete={() => deleteZone(z.id)} />)}
+        </div>}
+
+        <div style={{ padding: 14, background: "var(--bg)", borderRadius: 10 }}>
+          <div style={{ fontWeight: 700, fontSize: 10.5, color: "var(--t2)", textTransform: "uppercase", letterSpacing: .5, marginBottom: 8 }}>Add a zone</div>
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr auto", gap: 8, alignItems: "end" }}>
+            <input className="fi" placeholder="Zone name (e.g. Lekki, Ikeja)" value={newZone.name} onChange={e => setNewZone({ ...newZone, name: e.target.value })} />
+            <input className="fi" type="number" placeholder="Price (NGN)" value={newZone.price} onChange={e => setNewZone({ ...newZone, price: e.target.value })} />
+            <button className="btn btn-p btn-sm" disabled={zonesBusy || !newZone.name.trim() || !newZone.price} onClick={addZone}>{I.plus} Add</button>
+          </div>
+        </div>
+      </div>}
     </div>
+  </div>;
+}
+
+function ZoneRow({ zone, onSave, onDelete }) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(zone.name);
+  const [price, setPrice] = useState(zone.price);
+  const save = () => {
+    if (!name.trim() || !price || Number(price) < 0) return;
+    onSave({ name: name.trim(), price: Number(price) });
+    setEditing(false);
+  };
+  if (editing) {
+    return <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr auto auto", gap: 8, alignItems: "center", padding: "10px 0", borderBottom: "1px solid var(--bl)" }}>
+      <input className="fi" value={name} onChange={e => setName(e.target.value)} />
+      <input className="fi" type="number" value={price} onChange={e => setPrice(e.target.value)} />
+      <button className="btn btn-s btn-sm" onClick={() => { setName(zone.name); setPrice(zone.price); setEditing(false); }}>Cancel</button>
+      <button className="btn btn-p btn-sm" onClick={save}>Save</button>
+    </div>;
+  }
+  return <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: "1px solid var(--bl)" }}>
+    <div style={{ flex: 1, fontWeight: 500, fontSize: 13.5 }}>{zone.name}</div>
+    <div style={{ fontFamily: "var(--fm)", fontWeight: 600, fontSize: 13 }}>{fmt(zone.price)}</div>
+    <button className="ab" onClick={() => setEditing(true)}>{I.edit}</button>
+    <button className="ab dng" onClick={onDelete}>{I.trash}</button>
   </div>;
 }

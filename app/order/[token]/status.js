@@ -102,7 +102,11 @@ export default function OrderStatus({ token }) {
         {order.total > 0 && <div className="sect">
           <div className="sect-title">Total</div>
           <div className="sect-line"><span className="k">Subtotal</span><span className="v">{fmt(cartSubtotal)}</span></div>
-          {order.total !== cartSubtotal && <div className="sect-line"><span className="k">Adjustments / Delivery</span><span className="v">{fmt(order.total - cartSubtotal)}</span></div>}
+          {order.delivery_fee > 0 && <div className="sect-line"><span className="k">Delivery{order.delivery_zone_name ? ` (${order.delivery_zone_name})` : ""}</span><span className="v">{fmt(order.delivery_fee)}</span></div>}
+          {(() => {
+            const adj = order.total - cartSubtotal - (order.delivery_fee || 0);
+            return adj !== 0 ? <div className="sect-line"><span className="k">Adjustments</span><span className="v">{fmt(adj)}</span></div> : null;
+          })()}
           <div className="sect-line" style={{ fontSize: 15, fontWeight: 700, borderTop: "2px solid var(--t)", marginTop: 6, paddingTop: 10 }}><span className="k" style={{ color: "var(--t)" }}>Total Due</span><span className="v">{fmt(order.total)}</span></div>
         </div>}
 
@@ -110,6 +114,7 @@ export default function OrderStatus({ token }) {
           <div className="sect-title">Delivery / Contact</div>
           <div className="sect-line"><span className="k">Name</span><span className="v">{order.customer_name}</span></div>
           <div className="sect-line"><span className="k">Phone</span><span className="v">{order.customer_phone}</span></div>
+          {order.delivery_zone_name && <div className="sect-line"><span className="k">Zone</span><span className="v" style={{ maxWidth: "60%", textAlign: "right" }}>{order.delivery_zone_name}</span></div>}
           {order.delivery_address && <div className="sect-line"><span className="k">Address</span><span className="v" style={{ maxWidth: "60%", textAlign: "right" }}>{order.delivery_address}</span></div>}
         </div>
 

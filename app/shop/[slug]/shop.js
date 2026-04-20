@@ -10,6 +10,7 @@ export default function Shop({ slug }) {
   const [items, setItems] = useState([]);
   const [stats, setStats] = useState(null);
   const [reservations, setReservations] = useState({});
+  const [zones, setZones] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("All");
   const [cart, setCart] = useState([]);
@@ -34,6 +35,9 @@ export default function Shop({ slug }) {
         });
       });
       setReservations(resMap);
+      // Fetch delivery zones
+      const { data: dz } = await supabase.from("delivery_zones").select("*").eq("user_id", vend.id).order("sort_order", { ascending: true });
+      setZones(dz || []);
       setLoading(false);
     })();
   }, [slug]);
@@ -120,37 +124,57 @@ export default function Shop({ slug }) {
         <div className="cart-info">{cartCount} item{cartCount !== 1 ? "s" : ""}<b>{cartTotal > 0 ? fmt(cartTotal) : "Price TBD"}</b></div>
         <button className="cart-btn" onClick={() => setCheckoutOpen(true)}>{I.cart} Checkout {I.arr}</button>
       </div></div>}
-      {checkoutOpen && <Checkout vendor={vendor} cart={cart} updateQty={updateQty} onClose={() => setCheckoutOpen(false)} onPlaced={(order) => { setConfirmed(order); setCart([]); setCheckoutOpen(false); }} />}
+      {checkoutOpen && <Checkout vendor={vendor} cart={cart} zones={zones} updateQty={updateQty} onClose={() => setCheckoutOpen(false)} onPlaced={(order) => { setConfirmed(order); setCart([]); setCheckoutOpen(false); }} />}
     </div>
   </>;
 }
 
-function Checkout({ vendor, cart, updateQty, onClose, onPlaced }) {
+function Checkout({ vendor, cart, zones, updateQty, onClose, onPlaced }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
   const [notes, setNotes] = useState("");
+  const [zoneChoice, setZoneChoice] = useState(""); // zone id or "other"
+  const [otherLocation, setOtherLocation] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
   const hasProducts = cart.some(c => c.type === "Product");
   const cartTotal = cart.reduce((s, i) => s + (i.price || 0) * i.qty, 0);
   const hasAllPrices = cart.every(c => c.price);
+  const showZones = hasProducts && zones && zones.length > 0;
+
+  const selectedZone = zoneChoice && zoneChoice !== "other" ? zones.find(z => z.id === zoneChoice) : null;
+  const deliveryFee = selectedZone ? selectedZone.price : 0;
+  const grandTotal = cartTotal + deliveryFee;
 
   const place = async () => {
     if (!name.trim() || !phone.trim()) { setErr("Name and phone are required"); return; }
     if (hasProducts && !address.trim()) { setErr("Delivery address is required for products"); return; }
+    if (showZones && !zoneChoice) { setErr("Please select a delivery zone"); return; }
+    if (zoneChoice === "other" && !otherLocation.trim()) { setErr("Please enter your location"); return; }
     setBusy(true); setErr("");
     const token = genToken();
     const itemsSummary = cart.map(c => `${c.qty}x ${c.name}`).join(", ");
+
+    // Compose zone label and fee
+    let zoneLabel = null;
+    let finalFee = 0;
+    if (showZones) {
+      if (selectedZone) { zoneLabel = selectedZone.name; finalFee = selectedZone.price; }
+      else if (zoneChoice === "other") { zoneLabel = `Other: ${otherLocation.trim()}`; finalFee = 0; }
+    }
+
     const { data, error } = await supabase.from("orders").insert({
       user_id: vendor.id,
       customer_name: name.trim(),
       customer_phone: phone.trim(),
       delivery_address: hasProducts ? address.trim() : null,
+      delivery_zone_name: zoneLabel,
+      delivery_fee: finalFee,
       date: new Date().toISOString().slice(0, 10),
       item_name: itemsSummary.slice(0, 200),
-      total: hasAllPrices ? cartTotal : 0,
+      total: hasAllPrices ? (cartTotal + finalFee) : 0,
       status: "Pending",
       notes: notes.trim() || null,
       cart: cart,
@@ -160,7 +184,6 @@ function Checkout({ vendor, cart, updateQty, onClose, onPlaced }) {
     }).select().single();
     setBusy(false);
     if (error) { setErr(error.message); return; }
-    // Log the order placement as activity for the vendor
     supabase.from("activity_log").insert({ user_id: vendor.id, action: "storefront_order_received" });
     onPlaced(data);
   };
@@ -175,14 +198,50 @@ function Checkout({ vendor, cart, updateQty, onClose, onPlaced }) {
             <div className="qty-ctrl"><button className="qty-btn" onClick={() => updateQty(item.id, -1)}>-</button><div className="qty-val">{item.qty}</div><button className="qty-btn" onClick={() => updateQty(item.id, 1)}>+</button></div>
           </div>)}
         </div>
-        <div style={{ padding: "10px 0", borderTop: "1px solid var(--bl)", marginBottom: 16, display: "flex", justifyContent: "space-between", fontSize: 14, fontWeight: 600 }}>
-          <span>{hasAllPrices ? "Estimated total" : "Final total"}</span>
-          <span>{hasAllPrices ? fmt(cartTotal) : <span style={{ color: "var(--t3)" }}>Vendor will set price</span>}</span>
-        </div>
+
+        {hasAllPrices && <div style={{ padding: "10px 0", borderTop: "1px solid var(--bl)", marginBottom: 10, fontSize: 13 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "3px 0" }}>
+            <span style={{ color: "var(--t2)" }}>Subtotal</span>
+            <span style={{ fontWeight: 600 }}>{fmt(cartTotal)}</span>
+          </div>
+          {showZones && <div style={{ display: "flex", justifyContent: "space-between", padding: "3px 0" }}>
+            <span style={{ color: "var(--t2)" }}>Delivery{selectedZone ? ` (${selectedZone.name})` : zoneChoice === "other" ? " (Other)" : ""}</span>
+            <span style={{ fontWeight: 600 }}>{selectedZone ? fmt(deliveryFee) : zoneChoice === "other" ? <span style={{ color: "var(--t3)", fontWeight: 400 }}>Vendor will confirm</span> : <span style={{ color: "var(--t3)", fontWeight: 400 }}>—</span>}</span>
+          </div>}
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0 0", borderTop: "1px solid var(--bl)", marginTop: 6, fontSize: 14, fontWeight: 700 }}>
+            <span>Total</span>
+            <span>{selectedZone ? fmt(grandTotal) : zoneChoice === "other" ? <span style={{ color: "var(--t3)", fontWeight: 500, fontSize: 13 }}>{fmt(cartTotal)} + delivery</span> : fmt(cartTotal)}</span>
+          </div>
+        </div>}
+
+        {!hasAllPrices && <div style={{ padding: "10px 0", borderTop: "1px solid var(--bl)", marginBottom: 10, fontSize: 13, display: "flex", justifyContent: "space-between", fontWeight: 600 }}>
+          <span>Final total</span>
+          <span style={{ color: "var(--t3)" }}>Vendor will set price</span>
+        </div>}
+
         {err && <div className="auth-err">{err}</div>}
         <div className="fg"><label className="fl">Your name</label><input className="fi" value={name} onChange={e => setName(e.target.value)} placeholder="Full name" /></div>
         <div className="fg"><label className="fl">Phone number</label><input className="fi" value={phone} onChange={e => setPhone(e.target.value)} placeholder="08012345678" /></div>
+
+        {showZones && <>
+          <div className="fg">
+            <label className="fl">Delivery zone</label>
+            <select className="fs" value={zoneChoice} onChange={e => setZoneChoice(e.target.value)}>
+              <option value="">Select your zone...</option>
+              {zones.map(z => <option key={z.id} value={z.id}>{z.name} — {fmt(z.price)}</option>)}
+              <option value="other">Other (vendor will contact you)</option>
+            </select>
+          </div>
+          {zoneChoice === "other" && <div className="fg">
+            <label className="fl">Your location</label>
+            <input className="fi" placeholder="e.g. Abeokuta, Warri, Ibadan" value={otherLocation} onChange={e => setOtherLocation(e.target.value)} />
+            <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 4 }}>The vendor will confirm the delivery fee when reviewing your order.</div>
+          </div>}
+        </>}
+
         {hasProducts && <div className="fg"><label className="fl">Delivery address</label><textarea className="ft" value={address} onChange={e => setAddress(e.target.value)} placeholder="Street, city, landmarks..." /></div>}
+        {!hasProducts && <div className="fg"><label className="fl">Your location</label><input className="fi" value={address} onChange={e => setAddress(e.target.value)} placeholder="e.g. Lekki, Lagos — so the vendor can quote you" /></div>}
+
         <div className="fg"><label className="fl">Additional notes (optional)</label><textarea className="ft" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Size, color, preferences, date needed..." /></div>
       </div>
       <div className="mf"><button className="btn btn-s" onClick={onClose}>Cancel</button><button className="btn btn-p" disabled={busy} onClick={place}>{busy ? "Placing..." : "Place Order"}</button></div>
