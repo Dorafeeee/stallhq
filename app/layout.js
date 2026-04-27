@@ -1,7 +1,14 @@
-export const metadata = {
-  title: "Oja — Business Dashboard",
-  description: "Simple business management for Nigerian entrepreneurs",
-};
+import * as Sentry from '@sentry/nextjs';
+
+export function generateMetadata() {
+  return {
+    title: "Oja — Business Dashboard",
+    description: "Simple business management for Nigerian entrepreneurs",
+    other: {
+      ...Sentry.getTraceData()
+    }
+  };
+}
 
 export default function RootLayout({ children }) {
   return (
