@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase";
 import { CSS } from "../lib/styles";
 import { I, OjaLogo, OjaLogoSm } from "../lib/icons";
-import { uid, fmt, fmtDate, today, STATUSES, PAY_METHODS, FLOW_LABELS, compressImg, slugify, normalizePhone } from "../lib/utils";
+import { uid, fmt, fmtDate, today, STATUSES, PAY_METHODS, FLOW_LABELS, compressImg, slugify, normalizePhone, genToken } from "../lib/utils";
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -777,14 +777,21 @@ function SFForm({ d, profile, setOrders, orders, setPayments, payments, customer
   </div><div className="mf" style={{ flexWrap: "wrap" }}>
     <button className="btn btn-s" onClick={close}>Close</button>
     {d.flow_status === "awaiting_pricing" && <>
-      <button className="btn btn-d" disabled={busy} onClick={() => updateFlow("cancelled", { status: "Cancelled" })}>Decline</button>
+      <button className="btn btn-d" disabled={busy} onClick={() => { if (confirm("Decline this order? The customer will see it as cancelled.")) updateFlow("cancelled", { status: "Cancelled" }); }}>Decline</button>
       <button className="btn btn-p" disabled={busy || !total || Number(total) <= 0} onClick={() => updateFlow("awaiting_payment")}>{busy ? "Saving..." : "Send Invoice"}</button>
     </>}
+    {d.flow_status === "awaiting_payment" && <>
+      <button className="btn btn-d" disabled={busy} onClick={() => { if (confirm("Cancel this order? Customer will be notified via their order link.")) updateFlow("cancelled", { status: "Cancelled" }); }}>Cancel order</button>
+    </>}
     {d.flow_status === "payment_claimed" && <>
+      <button className="btn btn-d" disabled={busy} onClick={() => { if (confirm("Cancel this order? Customer will be notified.")) updateFlow("cancelled", { status: "Cancelled" }); }}>Cancel order</button>
       <button className="btn btn-s" disabled={busy} onClick={() => updateFlow("awaiting_payment")}>Not Yet (revert)</button>
       <button className="btn btn-p" disabled={busy} onClick={() => updateFlow("confirmed", { status: "In Progress" })}>{busy ? "Saving..." : "Confirm Payment Received"}</button>
     </>}
-    {d.flow_status === "confirmed" && <button className="btn btn-p" disabled={busy} onClick={() => updateFlow("shipped")}>{busy ? "..." : "Mark as Shipped"}</button>}
+    {d.flow_status === "confirmed" && <>
+      <button className="btn btn-d" disabled={busy} onClick={() => { if (confirm("Cancel this order? Stock will be restored and customer notified.")) updateFlow("cancelled", { status: "Cancelled" }); }}>Cancel order</button>
+      <button className="btn btn-p" disabled={busy} onClick={() => updateFlow("shipped")}>{busy ? "..." : "Mark as Shipped"}</button>
+    </>}
     {d.flow_status === "shipped" && <button className="btn btn-p" disabled={busy} onClick={() => updateFlow("completed", { status: "Completed" })}>{busy ? "..." : "Mark Completed"}</button>}
   </div></div>;
 }
@@ -792,38 +799,188 @@ function SFForm({ d, profile, setOrders, orders, setPayments, payments, customer
 // ══════════════════════════════════════════════════════════════
 // INVOICES
 // ══════════════════════════════════════════════════════════════
-function InvPage({ session, profile, invoices, setInvoices, orders, customers, payFor, modal, setModal }) {
+function InvPage({ session, profile, invoices, setInvoices, orders, setOrders, customers, setCustomers, items, setItems, payments, setPayments, payFor, modal, setModal, reload }) {
   const [vw, setVw] = useState(null);
-  const mkI = o => { const pd = payFor(o.id).reduce((s, p) => s + Number(p.amount), 0); const c = customers.find(x => x.id === o.customer_id); return { invoice_no: `INV-${String(invoices.length + 1).padStart(3, "0")}`, date: today(), due_date: null, customer_name: o.customer_name || "Walk-in", customer_phone: c?.phone || o.customer_phone || "", customer_email: c?.email || "", items: o.cart?.length ? o.cart.map(c => ({ description: c.name, qty: c.qty, price: c.price || 0 })) : [{ description: o.item_name, qty: 1, price: o.total }], amount_paid: pd, notes: "", order_id: o.id }; };
+  const [copiedToken, setCopiedToken] = useState(null);
+
+  const mkI = o => { const pd = payFor(o.id).reduce((s, p) => s + Number(p.amount), 0); const c = customers.find(x => x.id === o.customer_id); return { invoice_no: `INV-${String(invoices.length + 1).padStart(3, "0")}`, date: today(), due_date: null, customer_name: o.customer_name || "Walk-in", customer_phone: c?.phone || o.customer_phone || "", customer_email: c?.email || "", items: o.cart?.length ? o.cart.map(c => ({ description: c.name, qty: c.qty, price: c.price || 0, item_id: c.id || null })) : [{ description: o.item_name, qty: 1, price: o.total, item_id: null }], amount_paid: pd, notes: "", order_id: o.id, already_paid: pd > 0 }; };
+
+  // Auto-link or create a customer from invoice contact info
+  async function upsertCustomer(name, phone, email) {
+    if (!phone) return null;
+    const existing = customers.find(c => c.phone && normalizePhone(c.phone) === normalizePhone(phone));
+    if (existing) return existing.id;
+    const { data } = await supabase.from("customers").insert({
+      user_id: session.user.id,
+      name: name || "Customer",
+      phone: phone || null,
+      email: email || null,
+    }).select().single();
+    if (data) setCustomers(prev => [data, ...prev]);
+    return data?.id || null;
+  }
+
+  // Save flow for new invoices: create the invoice, then create the matching order with stock deduction
   const save = async (inv) => {
-    if (inv.id) { const { data } = await supabase.from("invoices").update({ invoice_no: inv.invoice_no, date: inv.date, due_date: inv.due_date, customer_name: inv.customer_name, customer_phone: inv.customer_phone, customer_email: inv.customer_email, items: inv.items, amount_paid: Number(inv.amount_paid || 0), notes: inv.notes }).eq("id", inv.id).select().single(); if (data) setInvoices(invoices.map(x => x.id === data.id ? data : x)); }
-    else { const { data } = await supabase.from("invoices").insert({ user_id: session.user.id, ...inv, amount_paid: Number(inv.amount_paid || 0) }).select().single(); if (data) setInvoices([data, ...invoices]); }
+    const isNew = !inv.id;
+    const sub = (inv.items || []).reduce((s, i) => s + i.qty * i.price, 0);
+
+    if (inv.id) {
+      // Editing existing invoice - just update the invoice fields, don't touch the order
+      const { data } = await supabase.from("invoices").update({
+        invoice_no: inv.invoice_no, date: inv.date, due_date: inv.due_date,
+        customer_name: inv.customer_name, customer_phone: inv.customer_phone, customer_email: inv.customer_email,
+        items: inv.items, amount_paid: Number(inv.amount_paid || 0), notes: inv.notes,
+      }).eq("id", inv.id).select().single();
+      if (data) setInvoices(invoices.map(x => x.id === data.id ? data : x));
+      setModal(null);
+      return;
+    }
+
+    // New invoice flow: create invoice, link to or create order
+    const customerId = await upsertCustomer(inv.customer_name, inv.customer_phone, inv.customer_email);
+    const alreadyPaid = inv.already_paid;
+    const cart = (inv.items || []).map(li => ({
+      id: li.item_id || null,
+      name: li.description,
+      qty: li.qty,
+      price: li.price,
+      type: li.item_id ? (items.find(x => x.id === li.item_id)?.type || "Product") : "Custom",
+      image: li.item_id ? (items.find(x => x.id === li.item_id)?.image || null) : null,
+    }));
+    const itemsSummary = cart.map(c => `${c.qty}x ${c.name}`).join(", ").slice(0, 200);
+    const token = genToken();
+
+    // Create the order
+    const orderPayload = {
+      user_id: session.user.id,
+      customer_id: customerId,
+      customer_name: inv.customer_name,
+      customer_phone: inv.customer_phone,
+      date: inv.date,
+      item_name: itemsSummary,
+      total: sub,
+      cart,
+      source: "manual_invoice",
+      flow_status: alreadyPaid ? "completed" : "awaiting_payment",
+      status: alreadyPaid ? "Completed" : "Pending",
+      public_token: token,
+      payment_confirmed_at: alreadyPaid ? new Date().toISOString() : null,
+      stock_deducted: alreadyPaid,
+    };
+    const { data: orderData } = await supabase.from("orders").insert(orderPayload).select().single();
+    if (!orderData) { alert("Could not create order. Please try again."); return; }
+    setOrders(prev => [orderData, ...prev]);
+
+    // Create the invoice with link to order
+    const { data: invData } = await supabase.from("invoices").insert({
+      user_id: session.user.id,
+      invoice_no: inv.invoice_no, date: inv.date, due_date: inv.due_date,
+      customer_name: inv.customer_name, customer_phone: inv.customer_phone, customer_email: inv.customer_email,
+      items: inv.items, amount_paid: alreadyPaid ? sub : 0, notes: inv.notes,
+      order_id: orderData.id,
+    }).select().single();
+    if (invData) {
+      setInvoices(prev => [invData, ...prev]);
+      // Also link the order back to the invoice
+      await supabase.from("orders").update({ invoice_id: invData.id }).eq("id", orderData.id);
+    }
+
+    if (alreadyPaid) {
+      // Record payment
+      const { data: pay } = await supabase.from("payments").insert({
+        order_id: orderData.id, user_id: session.user.id, amount: sub,
+        method: "Bank Transfer", date: today(), note: "Invoice marked as already paid",
+      }).select().single();
+      if (pay) setPayments(prev => [...prev, pay]);
+
+      // Deduct stock for catalog items
+      for (const ci of cart) {
+        if (ci.id && ci.qty) {
+          await supabase.rpc("decrement_stock", { p_item_id: ci.id, p_qty: ci.qty });
+        }
+      }
+      // Refresh items so vendor sees updated stock
+      if (reload) reload();
+    }
+    supabase.from("activity_log").insert({ user_id: session.user.id, action: alreadyPaid ? "invoice_recorded_paid" : "invoice_sent" });
     setModal(null);
   };
-  const del = async (id) => { await supabase.from("invoices").delete().eq("id", id); setInvoices(invoices.filter(i => i.id !== id)); };
-  const un = orders.filter(o => o.status !== "Cancelled" && !invoices.find(i => i.order_id === o.id));
+
+  const del = async (id) => {
+    if (!confirm("Delete this invoice? The linked order will also be deleted.")) return;
+    const inv = invoices.find(x => x.id === id);
+    // If linked order still exists, also delete it
+    if (inv?.order_id) {
+      await supabase.from("orders").delete().eq("id", inv.order_id);
+      setOrders(orders.filter(o => o.id !== inv.order_id));
+    }
+    await supabase.from("invoices").delete().eq("id", id);
+    setInvoices(invoices.filter(i => i.id !== id));
+  };
+
+  const shareLink = (inv) => {
+    const linkedOrder = orders.find(o => o.id === inv.order_id);
+    if (!linkedOrder?.public_token) {
+      alert("This invoice does not have a customer link. Only invoices created with this update have shareable links.");
+      return null;
+    }
+    return `${window.location.origin}/order/${linkedOrder.public_token}`;
+  };
+  const copyShareLink = (inv) => {
+    const url = shareLink(inv);
+    if (!url) return;
+    navigator.clipboard.writeText(url);
+    setCopiedToken(inv.id);
+    setTimeout(() => setCopiedToken(null), 1500);
+  };
+  const whatsappShareLink = (inv) => {
+    const url = shareLink(inv);
+    if (!url) return;
+    const sub = (inv.items || []).reduce((s, i) => s + i.qty * i.price, 0);
+    const bl = sub - (inv.amount_paid || 0);
+    const linkedOrder = orders.find(o => o.id === inv.order_id);
+    const text = bl > 0 && linkedOrder?.flow_status === "awaiting_payment"
+      ? `Hi ${inv.customer_name}, here is your invoice from ${profile.business_name}.\n\nTotal: ${fmt(sub)}\nView and pay: ${url}`
+      : `Hi ${inv.customer_name}, here is your receipt from ${profile.business_name}.\n\nView: ${url}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
+  };
+
+  const un = orders.filter(o => o.status !== "Cancelled" && !invoices.find(i => i.order_id === o.id) && o.source !== "manual_invoice");
+
   if (vw) {
     const inv = invoices.find(i => i.id === vw); if (!inv) { setVw(null); return null; }
     const sub = (inv.items || []).reduce((s, i) => s + i.qty * i.price, 0); const bl = sub - (inv.amount_paid || 0);
     const hb = profile.bank_name && profile.account_number;
-    const wa = `*Invoice ${inv.invoice_no}*\nFrom: ${profile.business_name}\nTo: ${inv.customer_name}\nTotal: ${fmt(sub)}\nPaid: ${fmt(inv.amount_paid)}\nBalance: ${fmt(bl)}${hb ? `\n\n*Pay to:*\n${profile.bank_name}\n${profile.account_number}\n${profile.account_name}` : ""}`;
+    const linkedOrder = orders.find(o => o.id === inv.order_id);
+    const customerUrl = linkedOrder?.public_token ? `${typeof window !== "undefined" ? window.location.origin : ""}/order/${linkedOrder.public_token}` : null;
     return <div>
-      <div className="ph"><button className="btn btn-s" onClick={() => setVw(null)}>Back</button><button className="btn btn-s" onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent(wa)}`, "_blank")}>{I.wa} WhatsApp</button></div>
+      <div className="ph" style={{ flexWrap: "wrap" }}>
+        <button className="btn btn-s" onClick={() => setVw(null)}>Back</button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {customerUrl && <button className="btn btn-s" onClick={() => copyShareLink(inv)}>{copiedToken === inv.id ? I.check : I.copy} {copiedToken === inv.id ? "Copied!" : "Copy customer link"}</button>}
+          {customerUrl && <button className="btn btn-s" onClick={() => whatsappShareLink(inv)}>{I.wa} WhatsApp customer</button>}
+        </div>
+      </div>
       <div className="inv-preview">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 }}><div><OjaLogo w={64} color="var(--g)" /><div style={{ fontSize: 12.5, color: "var(--t2)", marginTop: 6 }}>{profile.business_name}</div></div><div style={{ textAlign: "right", fontSize: 12.5, color: "var(--t2)" }}><div style={{ fontWeight: 700, fontSize: 15, fontFamily: "var(--fm)", color: "var(--t)" }}>{inv.invoice_no}</div><div>Date: {fmtDate(inv.date)}</div>{inv.due_date && <div>Due: {fmtDate(inv.due_date)}</div>}</div></div>
         <div className="inv-parties"><div><div className="inv-label">From</div><div style={{ fontWeight: 600 }}>{profile.business_name}</div>{profile.business_phone && <div>{profile.business_phone}</div>}</div><div><div className="inv-label">Bill To</div><div style={{ fontWeight: 600 }}>{inv.customer_name}</div>{inv.customer_phone && <div>{inv.customer_phone}</div>}</div></div>
         <table className="inv-table"><thead><tr><th>Description</th><th style={{ textAlign: "right" }}>Qty</th><th style={{ textAlign: "right" }}>Price</th><th style={{ textAlign: "right" }}>Total</th></tr></thead><tbody>{(inv.items || []).map((it, i) => <tr key={i}><td>{it.description}</td><td style={{ textAlign: "right" }}>{it.qty}</td><td style={{ textAlign: "right" }}>{fmt(it.price)}</td><td style={{ textAlign: "right" }}>{fmt(it.qty * it.price)}</td></tr>)}</tbody></table>
         <div style={{ display: "flex", justifyContent: "flex-end" }}><div className="inv-total"><div className="inv-tl"><span>Subtotal</span><span>{fmt(sub)}</span></div><div className="inv-tl"><span>Paid</span><span style={{ color: "var(--g)" }}>-{fmt(inv.amount_paid)}</span></div><div className="inv-tl grand"><span>Balance</span><span>{fmt(bl)}</span></div></div></div>
-        {hb && <div className="bk-box"><div className="bk-title">Payment Details</div><div className="bk-row"><span className="lbl">Bank</span><span className="val">{profile.bank_name}</span></div><div className="bk-row"><span className="lbl">Account</span><span className="val">{profile.account_number}</span></div><div className="bk-row"><span className="lbl">Name</span><span className="val">{profile.account_name}</span></div></div>}
+        {hb && bl > 0 && <div className="bk-box"><div className="bk-title">Payment Details</div><div className="bk-row"><span className="lbl">Bank</span><span className="val">{profile.bank_name}</span></div><div className="bk-row"><span className="lbl">Account</span><span className="val">{profile.account_number}</span></div><div className="bk-row"><span className="lbl">Name</span><span className="val">{profile.account_name}</span></div></div>}
+        {customerUrl && <div style={{ marginTop: 18, padding: 12, background: "var(--bg)", borderRadius: 8, fontSize: 11.5, fontFamily: "var(--fm)", overflowX: "auto" }}>
+          <div style={{ fontWeight: 700, fontSize: 10, textTransform: "uppercase", letterSpacing: .5, color: "var(--t3)", marginBottom: 4 }}>Customer link</div>
+          <div style={{ whiteSpace: "nowrap" }}>{customerUrl}</div>
+        </div>}
       </div>
     </div>;
   }
   return <div>
-    <div className="ph"><div><div className="pt">Invoices</div><div className="ps">{invoices.length}</div></div><button className="btn btn-p" onClick={() => setModal({ t: "i", d: { invoice_no: `INV-${String(invoices.length + 1).padStart(3, "0")}`, date: today(), due_date: null, customer_name: "", customer_phone: "", customer_email: "", items: [{ description: "", qty: 1, price: 0 }], amount_paid: 0, notes: "" } })}>{I.plus} New</button></div>
-    {un.length > 0 && <div className="card" style={{ marginBottom: 18, background: "var(--aml)", border: "1px solid #eed9a0" }}><div style={{ fontWeight: 600, fontSize: 12, marginBottom: 6 }}>Quick Invoice</div><div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>{un.slice(0, 5).map(o => <button key={o.id} className="btn btn-s btn-sm" onClick={() => setModal({ t: "i", d: mkI(o) })}>{o.customer_name || "Walk-in"} \u2014 {o.item_name}</button>)}</div></div>}
+    <div className="ph"><div><div className="pt">Invoices</div><div className="ps">{invoices.length}</div></div><button className="btn btn-p" onClick={() => setModal({ t: "i", d: { invoice_no: `INV-${String(invoices.length + 1).padStart(3, "0")}`, date: today(), due_date: null, customer_name: "", customer_phone: "", customer_email: "", items: [{ description: "", qty: 1, price: 0, item_id: null }], amount_paid: 0, notes: "", already_paid: true } })}>{I.plus} New</button></div>
+    {un.length > 0 && <div className="card" style={{ marginBottom: 18, background: "var(--aml)", border: "1px solid #eed9a0" }}><div style={{ fontWeight: 600, fontSize: 12, marginBottom: 6 }}>Quick Invoice from existing orders</div><div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>{un.slice(0, 5).map(o => <button key={o.id} className="btn btn-s btn-sm" onClick={() => setModal({ t: "i", d: mkI(o) })}>{o.customer_name || "Walk-in"} \u2014 {o.item_name}</button>)}</div></div>}
     {invoices.length === 0 ? <div className="card"><div className="empty"><p>No invoices yet.</p></div></div> : <>
-      <div className="card" style={{ padding: 0 }}><div className="tw"><table><thead><tr><th>No.</th><th>Date</th><th>Customer</th><th>Total</th><th>Balance</th><th style={{ width: 90 }}></th></tr></thead><tbody>{invoices.map(inv => { const sub = (inv.items || []).reduce((s, i) => s + i.qty * i.price, 0); const bl = sub - (inv.amount_paid || 0); return <tr key={inv.id}><td style={{ fontWeight: 600, fontFamily: "var(--fm)", fontSize: 11 }}>{inv.invoice_no}</td><td>{fmtDate(inv.date)}</td><td>{inv.customer_name}</td><td>{fmt(sub)}</td><td><span className={`badge ${bl <= 0 ? "bg-g" : "bg-r"}`}>{bl <= 0 ? "Paid" : fmt(bl)}</span></td><td><div className="ar"><button className="ab" onClick={() => setVw(inv.id)}>{I.search}</button><button className="ab" onClick={() => setModal({ t: "i", d: { ...inv } })}>{I.edit}</button><button className="ab dng" onClick={() => del(inv.id)}>{I.trash}</button></div></td></tr>; })}</tbody></table></div></div>
-      <div className="mcards">{invoices.map(inv => { const sub = (inv.items || []).reduce((s, i) => s + i.qty * i.price, 0); const bl = sub - (inv.amount_paid || 0); return <div key={inv.id} className="mcard">
+      <div className="card" style={{ padding: 0 }}><div className="tw"><table><thead><tr><th>No.</th><th>Date</th><th>Customer</th><th>Total</th><th>Balance</th><th style={{ width: 130 }}></th></tr></thead><tbody>{invoices.map(inv => { const sub = (inv.items || []).reduce((s, i) => s + i.qty * i.price, 0); const bl = sub - (inv.amount_paid || 0); const linked = orders.find(o => o.id === inv.order_id); return <tr key={inv.id}><td style={{ fontWeight: 600, fontFamily: "var(--fm)", fontSize: 11 }}>{inv.invoice_no}</td><td>{fmtDate(inv.date)}</td><td>{inv.customer_name}</td><td>{fmt(sub)}</td><td><span className={`badge ${bl <= 0 ? "bg-g" : "bg-r"}`}>{bl <= 0 ? "Paid" : fmt(bl)}</span></td><td><div className="ar"><button className="ab" onClick={() => setVw(inv.id)}>{I.search}</button>{linked?.public_token && <button className="ab" title="Copy customer link" onClick={() => copyShareLink(inv)}>{copiedToken === inv.id ? I.check : I.link}</button>}<button className="ab" onClick={() => setModal({ t: "i", d: { ...inv } })}>{I.edit}</button><button className="ab dng" onClick={() => del(inv.id)}>{I.trash}</button></div></td></tr>; })}</tbody></table></div></div>
+      <div className="mcards">{invoices.map(inv => { const sub = (inv.items || []).reduce((s, i) => s + i.qty * i.price, 0); const bl = sub - (inv.amount_paid || 0); const linked = orders.find(o => o.id === inv.order_id); return <div key={inv.id} className="mcard">
         <div className="mcard-top">
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="mcard-name">{inv.customer_name}</div>
@@ -837,23 +994,97 @@ function InvPage({ session, profile, invoices, setInvoices, orders, customers, p
         </div>
         <div className="mcard-actions">
           <button className="btn btn-s btn-sm" onClick={() => setVw(inv.id)}>{I.search} View</button>
+          {linked?.public_token && <button className="btn btn-s btn-sm" onClick={() => copyShareLink(inv)}>{copiedToken === inv.id ? <>{I.check} Copied</> : <>{I.link} Share link</>}</button>}
           <button className="btn btn-s btn-sm" onClick={() => setModal({ t: "i", d: { ...inv } })}>{I.edit} Edit</button>
-          <button className="btn btn-d btn-sm" onClick={() => { if (confirm("Delete this invoice?")) del(inv.id); }}>{I.trash}</button>
+          <button className="btn btn-d btn-sm" onClick={() => del(inv.id)}>{I.trash}</button>
         </div>
       </div>; })}</div>
     </>}
-    {modal?.t === "i" && <Modal title="Invoice" onClose={() => setModal(null)}><IForm d={modal.d} save={save} cancel={() => setModal(null)} /></Modal>}
+    {modal?.t === "i" && <Modal title={modal.d.id ? "Edit Invoice" : "New Invoice"} onClose={() => setModal(null)} wide><IForm d={modal.d} items={items} save={save} cancel={() => setModal(null)} /></Modal>}
   </div>;
 }
-function IForm({ d, save, cancel }) {
+function IForm({ d, items, save, cancel }) {
   const [f, sf] = useState(d); const set = (k, v) => sf(p => ({ ...p, [k]: v })); const [busy, setBusy] = useState(false);
-  const uI = (i, k, v) => { const items = [...f.items]; items[i] = { ...items[i], [k]: k === "description" ? v : Number(v) || 0 }; set("items", items); };
-  return <div><div className="mb"><div className="fr"><div className="fg"><label className="fl">Invoice No</label><input className="fi" value={f.invoice_no} onChange={e => set("invoice_no", e.target.value)} /></div><div className="fg"><label className="fl">Date</label><input className="fi" type="date" value={f.date} onChange={e => set("date", e.target.value)} /></div></div><div className="fg"><label className="fl">Customer</label><input className="fi" value={f.customer_name} onChange={e => set("customer_name", e.target.value)} /></div><div className="fr"><div className="fg"><label className="fl">Phone</label><input className="fi" value={f.customer_phone || ""} onChange={e => set("customer_phone", e.target.value)} /></div><div className="fg"><label className="fl">Email</label><input className="fi" value={f.customer_email || ""} onChange={e => set("customer_email", e.target.value)} /></div></div>
+  const isNew = !f.id;
+
+  const uI = (i, k, v) => {
+    const newItems = [...f.items];
+    newItems[i] = { ...newItems[i], [k]: k === "description" ? v : Number(v) || 0 };
+    set("items", newItems);
+  };
+
+  const pickCatalogItem = (i, itemId) => {
+    const newItems = [...f.items];
+    if (!itemId) {
+      newItems[i] = { description: "", qty: 1, price: 0, item_id: null };
+    } else {
+      const cat = items.find(x => x.id === itemId);
+      if (cat) {
+        newItems[i] = {
+          description: cat.name,
+          qty: newItems[i]?.qty || 1,
+          price: cat.price || 0,
+          item_id: cat.id,
+        };
+      }
+    }
+    set("items", newItems);
+  };
+
+  const sub = (f.items || []).reduce((s, i) => s + i.qty * i.price, 0);
+
+  return <div><div className="mb">
+    <div className="fr">
+      <div className="fg"><label className="fl">Invoice No</label><input className="fi" value={f.invoice_no} onChange={e => set("invoice_no", e.target.value)} /></div>
+      <div className="fg"><label className="fl">Date</label><input className="fi" type="date" value={f.date} onChange={e => set("date", e.target.value)} /></div>
+    </div>
+    <div className="fg"><label className="fl">Customer name</label><input className="fi" value={f.customer_name} onChange={e => set("customer_name", e.target.value)} /></div>
+    <div className="fr">
+      <div className="fg"><label className="fl">Phone {isNew && <span style={{ color: "var(--r)" }}>*</span>}</label><input className="fi" placeholder="08012345678" value={f.customer_phone || ""} onChange={e => set("customer_phone", e.target.value)} /></div>
+      <div className="fg"><label className="fl">Email</label><input className="fi" value={f.customer_email || ""} onChange={e => set("customer_email", e.target.value)} /></div>
+    </div>
+
     <div style={{ fontWeight: 700, fontSize: 10.5, textTransform: "uppercase", letterSpacing: .5, color: "var(--t2)", marginBottom: 8, marginTop: 6 }}>Line Items</div>
-    {(f.items || []).map((it, i) => <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr auto", gap: 6, marginBottom: 6, alignItems: "end" }}><input className="fi" placeholder="Description" value={it.description} onChange={e => uI(i, "description", e.target.value)} /><input className="fi" type="number" placeholder="Qty" value={it.qty} onChange={e => uI(i, "qty", e.target.value)} /><input className="fi" type="number" placeholder="Price" value={it.price} onChange={e => uI(i, "price", e.target.value)} />{f.items.length > 1 && <button className="ab dng" onClick={() => set("items", f.items.filter((_, x) => x !== i))}>{I.close}</button>}</div>)}
-    <button className="btn btn-g btn-sm" onClick={() => set("items", [...(f.items || []), { description: "", qty: 1, price: 0 }])}>{I.plus} Add line</button>
-    <div className="fg" style={{ marginTop: 14 }}><label className="fl">Amount Paid</label><input className="fi" type="number" value={f.amount_paid || 0} onChange={e => set("amount_paid", e.target.value)} /></div><div className="fg"><label className="fl">Notes</label><textarea className="ft" placeholder="Payment instructions..." value={f.notes || ""} onChange={e => set("notes", e.target.value)} /></div>
-  </div><div className="mf"><button className="btn btn-s" onClick={cancel}>Cancel</button><button className="btn btn-p" disabled={busy} onClick={async () => { setBusy(true); await save(f); setBusy(false); }}>{busy ? "Saving..." : "Save"}</button></div></div>;
+    {(f.items || []).map((it, i) => <div key={i} style={{ marginBottom: 10, padding: 10, background: "var(--bg)", borderRadius: 8 }}>
+      {items && items.length > 0 && <div className="fg" style={{ marginBottom: 8 }}>
+        <select className="fs" value={it.item_id || ""} onChange={e => pickCatalogItem(i, e.target.value || null)}>
+          <option value="">— Custom item (no catalog link, no stock tracking) —</option>
+          {items.map(cat => <option key={cat.id} value={cat.id}>{cat.name} {cat.type === "Product" && cat.stock !== null ? `(${cat.stock} in stock)` : ""}</option>)}
+        </select>
+      </div>}
+      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr auto", gap: 6, alignItems: "end" }}>
+        <input className="fi" placeholder="Description" value={it.description} onChange={e => uI(i, "description", e.target.value)} disabled={!!it.item_id} />
+        <input className="fi" type="number" placeholder="Qty" value={it.qty} onChange={e => uI(i, "qty", e.target.value)} />
+        <input className="fi" type="number" placeholder="Price" value={it.price} onChange={e => uI(i, "price", e.target.value)} />
+        {f.items.length > 1 && <button className="ab dng" onClick={() => set("items", f.items.filter((_, x) => x !== i))}>{I.close}</button>}
+      </div>
+    </div>)}
+    <button className="btn btn-g btn-sm" onClick={() => set("items", [...(f.items || []), { description: "", qty: 1, price: 0, item_id: null }])}>{I.plus} Add line</button>
+
+    <div style={{ marginTop: 14, padding: 12, background: "var(--bg)", borderRadius: 8, display: "flex", justifyContent: "space-between", fontWeight: 600 }}>
+      <span>Subtotal</span><span>{fmt(sub)}</span>
+    </div>
+
+    {isNew && <div className="fg" style={{ marginTop: 14, padding: 12, background: "var(--gl)", borderRadius: 8 }}>
+      <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+        <input type="checkbox" checked={f.already_paid !== false} onChange={e => set("already_paid", e.target.checked)} />
+        <div>
+          <div style={{ fontSize: 13.5, fontWeight: 600 }}>Already paid</div>
+          <div style={{ fontSize: 11.5, color: "var(--t2)", marginTop: 2 }}>{f.already_paid !== false
+            ? "Payment received \u2014 stock will be deducted now and order marked complete."
+            : "Customer will see a payment request on their order link. Stock deducts when you confirm payment."}</div>
+        </div>
+      </label>
+    </div>}
+
+    {!isNew && <div className="fg" style={{ marginTop: 14 }}><label className="fl">Amount Paid</label><input className="fi" type="number" value={f.amount_paid || 0} onChange={e => set("amount_paid", e.target.value)} /></div>}
+
+    <div className="fg" style={{ marginTop: 10 }}><label className="fl">Notes</label><textarea className="ft" placeholder="Payment instructions, terms..." value={f.notes || ""} onChange={e => set("notes", e.target.value)} /></div>
+  </div>
+  <div className="mf">
+    <button className="btn btn-s" onClick={cancel}>Cancel</button>
+    <button className="btn btn-p" disabled={busy || !f.customer_name?.trim() || (isNew && !f.customer_phone?.trim()) || !f.items?.length || sub <= 0} onClick={async () => { setBusy(true); await save(f); setBusy(false); }}>{busy ? "Saving..." : isNew ? "Create Invoice" : "Save"}</button>
+  </div></div>;
 }
 
 // ══════════════════════════════════════════════════════════════
