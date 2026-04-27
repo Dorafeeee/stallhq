@@ -126,6 +126,7 @@ function Dashboard({ session, profile, onProfile }) {
   const [payments, setPayments] = useState([]);
   const [modal, setModal] = useState(null); const [sidebarOpen, setSidebarOpen] = useState(false);
   const [search, setSearch] = useState(""); const [loaded, setLoaded] = useState(false);
+  const [bugOpen, setBugOpen] = useState(false);
 
   useEffect(() => { loadAll(); const t = setInterval(loadOrders, 15000); return () => clearInterval(t); }, []);
 
@@ -181,7 +182,7 @@ function Dashboard({ session, profile, onProfile }) {
     <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
       <div className="sb-brand"><OjaLogoSm /></div>
       <nav>{NAV.map(n => <button key={n.id} className={`ni ${page === n.id ? "act" : ""}`} onClick={() => { setPage(n.id); setSidebarOpen(false); setSearch(""); }}>{n.icon}{n.label}{n.badge && <span className={`nb ${n.urgent ? "nb-urgent" : ""}`}>{n.badge}</span>}</button>)}</nav>
-      <div className="sf"><div className="sft">{profile.business_name}</div><button className="sf-logout" onClick={logout}>{I.logout} Sign out</button></div>
+      <div className="sf"><div className="sft">{profile.business_name}</div><button className="sf-logout" onClick={() => setBugOpen(true)} style={{ marginBottom: 4 }}>{I.flag} Report a problem</button><button className="sf-logout" onClick={logout}>{I.logout} Sign out</button></div>
     </aside>
     <main className="main">
       {page === "dashboard" && <DashPage {...cx} />}
@@ -192,6 +193,7 @@ function Dashboard({ session, profile, onProfile }) {
       {page === "storefront" && <StorePage {...cx} />}
       {page === "settings" && <SettPage {...cx} />}
     </main>
+    {bugOpen && <BugReportModal session={session} profile={profile} role="vendor" onClose={() => setBugOpen(false)} />}
   </div>;
 }
 
@@ -1260,5 +1262,66 @@ function ZoneRow({ zone, onSave, onDelete }) {
     <div style={{ fontFamily: "var(--fm)", fontWeight: 600, fontSize: 13 }}>{fmt(zone.price)}</div>
     <button className="ab" onClick={() => setEditing(true)}>{I.edit}</button>
     <button className="ab dng" onClick={onDelete}>{I.trash}</button>
+  </div>;
+}
+
+// ══════════════════════════════════════════════════════════════
+// BUG REPORT MODAL (shared by vendor app, storefront, customer order page)
+// ══════════════════════════════════════════════════════════════
+export function BugReportModal({ session, profile, role, onClose }) {
+  const isLoggedIn = !!session;
+  const [description, setDescription] = useState("");
+  const [name, setName] = useState(profile?.business_name || "");
+  const [email, setEmail] = useState(session?.user?.email || profile?.business_email || "");
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  const [err, setErr] = useState("");
+
+  const submit = async () => {
+    if (!description.trim()) { setErr("Please describe the problem"); return; }
+    setBusy(true); setErr("");
+    const payload = {
+      reporter_user_id: session?.user?.id || null,
+      reporter_name: name.trim() || null,
+      reporter_email: email.trim() || null,
+      reporter_role: role || (isLoggedIn ? "vendor" : "anonymous"),
+      page_url: typeof window !== "undefined" ? window.location.href : null,
+      description: description.trim(),
+      user_agent: typeof navigator !== "undefined" ? navigator.userAgent : null,
+    };
+    const { error } = await supabase.from("bug_reports").insert(payload);
+    setBusy(false);
+    if (error) { setErr("Could not submit. Please try again."); return; }
+    setDone(true);
+  };
+
+  return <div className="mo" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="ml"><div className="mh"><div className="mt">Report a problem</div><button className="mc" onClick={onClose}>{I.close}</button></div>
+      {done ? <>
+        <div className="mb" style={{ textAlign: "center", padding: "30px 20px" }}>
+          <div style={{ width: 56, height: 56, borderRadius: "50%", background: "var(--gl)", color: "var(--g)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>{I.check}</div>
+          <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>Thanks for letting us know</div>
+          <div style={{ fontSize: 13, color: "var(--t2)", lineHeight: 1.5, maxWidth: 320, margin: "0 auto" }}>Your report has been received. We'll review it and follow up if we need more details.</div>
+        </div>
+        <div className="mf"><button className="btn btn-p" onClick={onClose}>Close</button></div>
+      </> : <>
+        <div className="mb">
+          <div style={{ fontSize: 12.5, color: "var(--t2)", lineHeight: 1.5, marginBottom: 14 }}>Tell us what went wrong. The more detail you can give (what you were doing, what you expected, what happened), the easier it'll be for us to help.</div>
+          {err && <div className="auth-err">{err}</div>}
+          <div className="fg"><label className="fl">What happened?</label><textarea className="ft" placeholder="Describe the problem..." value={description} onChange={e => setDescription(e.target.value)} style={{ minHeight: 120 }} /></div>
+          {!isLoggedIn && <>
+            <div className="fr">
+              <div className="fg"><label className="fl">Your name (optional)</label><input className="fi" value={name} onChange={e => setName(e.target.value)} /></div>
+              <div className="fg"><label className="fl">Email (optional)</label><input className="fi" type="email" placeholder="So we can reach you" value={email} onChange={e => setEmail(e.target.value)} /></div>
+            </div>
+          </>}
+          <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 6 }}>We'll automatically include the page you're on and your browser info to help us debug.</div>
+        </div>
+        <div className="mf">
+          <button className="btn btn-s" onClick={onClose}>Cancel</button>
+          <button className="btn btn-p" disabled={busy || !description.trim()} onClick={submit}>{busy ? "Submitting..." : "Submit report"}</button>
+        </div>
+      </>}
+    </div>
   </div>;
 }

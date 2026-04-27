@@ -4,6 +4,7 @@ import { supabase } from "../../../lib/supabase";
 import { CSS } from "../../../lib/styles";
 import { I, OjaLogo } from "../../../lib/icons";
 import { fmt, genToken } from "../../../lib/utils";
+import { BugReportModal } from "../../oja";
 
 export default function Shop({ slug }) {
   const [vendor, setVendor] = useState(null);
@@ -16,6 +17,7 @@ export default function Shop({ slug }) {
   const [cart, setCart] = useState([]);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [confirmed, setConfirmed] = useState(null);
+  const [bugOpen, setBugOpen] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -125,6 +127,10 @@ export default function Shop({ slug }) {
         <button className="cart-btn" onClick={() => setCheckoutOpen(true)}>{I.cart} Checkout {I.arr}</button>
       </div></div>}
       {checkoutOpen && <Checkout vendor={vendor} cart={cart} zones={zones} updateQty={updateQty} onClose={() => setCheckoutOpen(false)} onPlaced={(order) => { setConfirmed(order); setCart([]); setCheckoutOpen(false); }} />}
+      <div style={{ textAlign: "center", padding: "24px 16px 100px", fontSize: 11, color: "var(--t3)" }}>
+        <button onClick={() => setBugOpen(true)} style={{ background: "none", border: "none", color: "var(--t3)", cursor: "pointer", fontFamily: "var(--fb)", fontSize: 11, textDecoration: "underline" }}>Report a problem</button>
+      </div>
+      {bugOpen && <BugReportModal session={null} profile={null} role="customer" onClose={() => setBugOpen(false)} />}
     </div>
   </>;
 }

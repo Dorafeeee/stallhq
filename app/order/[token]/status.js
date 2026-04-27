@@ -4,6 +4,7 @@ import { supabase } from "../../../lib/supabase";
 import { CSS } from "../../../lib/styles";
 import { I, OjaLogo } from "../../../lib/icons";
 import { fmt, fmtDate, FLOW_LABELS } from "../../../lib/utils";
+import { BugReportModal } from "../../oja";
 
 const STEPS = [
   { key: "awaiting_pricing", label: "Order Received" },
@@ -25,6 +26,7 @@ export default function OrderStatus({ token }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(null);
+  const [bugOpen, setBugOpen] = useState(false);
 
   useEffect(() => {
     load();
@@ -137,7 +139,11 @@ export default function OrderStatus({ token }) {
       {vendor.business_phone && <div style={{ padding: "16px 24px", borderTop: "1px solid var(--bl)", textAlign: "center", fontSize: 12, color: "var(--t2)" }}>
         Need help? <a href={`https://wa.me/234${vendor.business_phone.replace(/^0/, "")}`} target="_blank" rel="noopener noreferrer" style={{ color: "var(--g)", fontWeight: 600 }}>Contact {vendor.business_name} on WhatsApp</a>
       </div>}
+      <div style={{ padding: "8px 16px 18px", textAlign: "center", fontSize: 11, color: "var(--t3)" }}>
+        <button onClick={() => setBugOpen(true)} style={{ background: "none", border: "none", color: "var(--t3)", cursor: "pointer", fontFamily: "var(--fb)", fontSize: 11, textDecoration: "underline" }}>Report a problem with this page</button>
+      </div>
     </div></div>
+    {bugOpen && <BugReportModal session={null} profile={null} role="customer" onClose={() => setBugOpen(false)} />}
   </>;
 }
 

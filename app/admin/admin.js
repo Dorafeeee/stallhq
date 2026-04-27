@@ -86,7 +86,7 @@ function AdminShell({ session, profile }) {
   useEffect(() => { loadAll(); const t = setInterval(loadAll, 30000); return () => clearInterval(t); }, []);
 
   async function loadAll() {
-    const [profs, items, custs, ords, pays, acts, revs] = await Promise.all([
+    const [profs, items, custs, ords, pays, acts, revs, bugs] = await Promise.all([
       supabase.from("profiles").select("*").order("created_at", { ascending: false }),
       supabase.from("items").select("id, user_id, type"),
       supabase.from("customers").select("id, user_id"),
@@ -94,11 +94,13 @@ function AdminShell({ session, profile }) {
       supabase.from("payments").select("*"),
       supabase.from("activity_log").select("*").order("created_at", { ascending: false }).limit(500),
       supabase.from("reviews").select("*").order("created_at", { ascending: false }),
+      supabase.from("bug_reports").select("*").order("created_at", { ascending: false }),
     ]);
     setData({
       profiles: profs.data || [], items: items.data || [], customers: custs.data || [],
       orders: ords.data || [], payments: pays.data || [], activity: acts.data || [],
       reviews: revs.data || [],
+      bug_reports: bugs.data || [],
     });
   }
 
@@ -109,6 +111,7 @@ function AdminShell({ session, profile }) {
     { id: "users", label: "Users" },
     { id: "orders", label: "Orders" },
     { id: "reviews", label: "Reviews" },
+    { id: "support", label: "Support" },
     { id: "activity", label: "Activity" },
   ];
 
@@ -131,6 +134,7 @@ function AdminShell({ session, profile }) {
       {page === "users" && <Users data={data} />}
       {page === "orders" && <Orders data={data} />}
       {page === "reviews" && <Reviews data={data} />}
+      {page === "support" && <Support data={data} reload={loadAll} />}
       {page === "activity" && <Activity data={data} />}
     </main>
   </div>;
@@ -499,6 +503,164 @@ function Reviews({ data }) {
         </div>)}
       </div>
     }
+  </div>;
+}
+
+// ══════════════════════════════════════════════════════════════
+// SUPPORT (bug reports)
+// ══════════════════════════════════════════════════════════════
+function Support({ data, reload }) {
+  const { bug_reports = [], profiles } = data;
+  const profMap = Object.fromEntries(profiles.map(p => [p.id, p.business_name || p.business_email]));
+  const [filter, setFilter] = useState("open");
+  const [priorityFilter, setPriorityFilter] = useState("all");
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const filtered = bug_reports
+    .filter(b => filter === "all" ? true : b.status === filter)
+    .filter(b => priorityFilter === "all" ? true : b.priority === priorityFilter)
+    .filter(b => {
+      if (!search) return true;
+      const s = search.toLowerCase();
+      return (b.description || "").toLowerCase().includes(s)
+        || (b.reporter_name || "").toLowerCase().includes(s)
+        || (b.reporter_email || "").toLowerCase().includes(s)
+        || (profMap[b.reporter_user_id] || "").toLowerCase().includes(s);
+    });
+
+  const counts = {
+    open: bug_reports.filter(b => b.status === "open").length,
+    in_progress: bug_reports.filter(b => b.status === "in_progress").length,
+    resolved: bug_reports.filter(b => b.status === "resolved").length,
+    critical: bug_reports.filter(b => b.priority === "critical" && b.status !== "closed" && b.status !== "resolved").length,
+    weekResolved: bug_reports.filter(b => b.status === "resolved" && b.resolved_at && (Date.now() - new Date(b.resolved_at).getTime()) < 7 * 86400000).length,
+  };
+
+  const updateReport = async (id, changes) => {
+    setBusy(true);
+    if (changes.status === "resolved" || changes.status === "closed") {
+      changes.resolved_at = new Date().toISOString();
+    }
+    const { data: updated } = await supabase.from("bug_reports").update(changes).eq("id", id).select().single();
+    if (updated && reload) reload();
+    if (updated) setSelected(updated);
+    setBusy(false);
+  };
+
+  return <div>
+    <div className="admin-ph"><div className="adm-t">Support</div><div className="adm-s">{bug_reports.length} reports</div></div>
+
+    <div className="kpi-grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))" }}>
+      <div className="kpi"><div className="kpi-l">Open</div><div className="kpi-v" style={{ color: counts.open > 0 ? "var(--a-am)" : "inherit" }}>{counts.open}</div></div>
+      <div className="kpi"><div className="kpi-l">In Progress</div><div className="kpi-v">{counts.in_progress}</div></div>
+      <div className="kpi"><div className="kpi-l">Critical Open</div><div className="kpi-v" style={{ color: counts.critical > 0 ? "var(--a-r)" : "inherit" }}>{counts.critical}</div></div>
+      <div className="kpi"><div className="kpi-l">Resolved (7d)</div><div className="kpi-v" style={{ color: "var(--a-g)" }}>{counts.weekResolved}</div></div>
+    </div>
+
+    <div className="a-filterrow">
+      <div className="a-search"><span className="ic">{I.search}</span><input placeholder="Search reports..." value={search} onChange={e => setSearch(e.target.value)} /></div>
+      <div className="a-tabs">
+        {[["all", "All"], ["open", "Open"], ["in_progress", "In Progress"], ["resolved", "Resolved"], ["closed", "Closed"]].map(([v, l]) => <button key={v} className={`a-tab ${filter === v ? "act" : ""}`} onClick={() => setFilter(v)}>{l}</button>)}
+      </div>
+      <select className="fs" value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)} style={{ background: "var(--a-s)", color: "var(--a-t)", border: "1px solid var(--a-b)", padding: "8px 10px", borderRadius: 6, fontSize: 12 }}>
+        <option value="all">All priorities</option>
+        <option value="critical">Critical</option>
+        <option value="high">High</option>
+        <option value="normal">Normal</option>
+        <option value="low">Low</option>
+      </select>
+    </div>
+
+    {filtered.length === 0 ? <div className="a-empty">No reports match.</div> :
+      <div className="a-card" style={{ padding: 0 }}>
+        {filtered.map(b => <div key={b.id} onClick={() => setSelected(b)} style={{ padding: "14px 18px", borderBottom: "1px solid var(--a-bl)", cursor: "pointer", transition: "background .15s" }} onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,.02)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <span className={`a-badge ${b.status === "open" ? "a-bg-a" : b.status === "in_progress" ? "a-bg-b" : b.status === "resolved" ? "a-bg-g" : "a-bg-gr"}`}>{b.status.replace("_", " ")}</span>
+              <span className={`a-badge ${b.priority === "critical" ? "a-bg-r" : b.priority === "high" ? "a-bg-a" : b.priority === "normal" ? "a-bg-gr" : "a-bg-gr"}`}>{b.priority}</span>
+              <span className="a-badge a-bg-p">{b.reporter_role}</span>
+            </div>
+            <span style={{ fontSize: 10.5, color: "var(--a-t3)", fontFamily: "var(--afm)" }}>{fmtDate(b.created_at)}</span>
+          </div>
+          <div style={{ fontSize: 13, lineHeight: 1.5, color: "var(--a-t)", marginBottom: 4 }}>{b.description.slice(0, 200)}{b.description.length > 200 ? "..." : ""}</div>
+          <div style={{ fontSize: 11, color: "var(--a-t3)", fontFamily: "var(--afm)" }}>
+            {b.reporter_name || profMap[b.reporter_user_id] || "Anonymous"}
+            {b.reporter_email && ` · ${b.reporter_email}`}
+          </div>
+        </div>)}
+      </div>
+    }
+
+    {selected && <div className="mo" onClick={e => { if (e.target === e.currentTarget) setSelected(null); }}>
+      <div className="ml" style={{ background: "var(--a-s)", maxWidth: 640 }}>
+        <div className="mh" style={{ borderBottom: "1px solid var(--a-bl)" }}><div className="mt" style={{ color: "var(--a-t)" }}>Report Details</div><button className="mc" onClick={() => setSelected(null)} style={{ color: "var(--a-t)" }}>{I.close}</button></div>
+        <div className="mb" style={{ background: "var(--a-s)", color: "var(--a-t)" }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+            <span className={`a-badge ${selected.status === "open" ? "a-bg-a" : selected.status === "in_progress" ? "a-bg-b" : selected.status === "resolved" ? "a-bg-g" : "a-bg-gr"}`}>{selected.status.replace("_", " ")}</span>
+            <span className={`a-badge ${selected.priority === "critical" ? "a-bg-r" : selected.priority === "high" ? "a-bg-a" : "a-bg-gr"}`}>{selected.priority}</span>
+            <span className="a-badge a-bg-p">{selected.reporter_role}</span>
+          </div>
+
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 10.5, color: "var(--a-t3)", textTransform: "uppercase", letterSpacing: .5, fontWeight: 700, marginBottom: 6, fontFamily: "var(--afm)" }}>Description</div>
+            <div style={{ fontSize: 13, lineHeight: 1.6, padding: 12, background: "var(--a-bg)", borderRadius: 8, whiteSpace: "pre-wrap" }}>{selected.description}</div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+            <div>
+              <div style={{ fontSize: 10.5, color: "var(--a-t3)", textTransform: "uppercase", letterSpacing: .5, fontWeight: 700, marginBottom: 4, fontFamily: "var(--afm)" }}>Reporter</div>
+              <div style={{ fontSize: 12.5 }}>{selected.reporter_name || profMap[selected.reporter_user_id] || "Anonymous"}</div>
+              {selected.reporter_email && <div style={{ fontSize: 11.5, color: "var(--a-t2)", fontFamily: "var(--afm)", wordBreak: "break-all" }}>{selected.reporter_email}</div>}
+            </div>
+            <div>
+              <div style={{ fontSize: 10.5, color: "var(--a-t3)", textTransform: "uppercase", letterSpacing: .5, fontWeight: 700, marginBottom: 4, fontFamily: "var(--afm)" }}>Submitted</div>
+              <div style={{ fontSize: 12.5, fontFamily: "var(--afm)" }}>{fmtDate(selected.created_at)}</div>
+            </div>
+          </div>
+
+          {selected.page_url && <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 10.5, color: "var(--a-t3)", textTransform: "uppercase", letterSpacing: .5, fontWeight: 700, marginBottom: 4, fontFamily: "var(--afm)" }}>Page URL</div>
+            <div style={{ fontSize: 11.5, fontFamily: "var(--afm)", wordBreak: "break-all", padding: 8, background: "var(--a-bg)", borderRadius: 6 }}>{selected.page_url}</div>
+          </div>}
+
+          {selected.user_agent && <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 10.5, color: "var(--a-t3)", textTransform: "uppercase", letterSpacing: .5, fontWeight: 700, marginBottom: 4, fontFamily: "var(--afm)" }}>Browser</div>
+            <div style={{ fontSize: 10.5, fontFamily: "var(--afm)", wordBreak: "break-all", color: "var(--a-t2)" }}>{selected.user_agent}</div>
+          </div>}
+
+          <div style={{ borderTop: "1px solid var(--a-bl)", paddingTop: 14, marginTop: 14 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+              <div>
+                <div style={{ fontSize: 10.5, color: "var(--a-t3)", textTransform: "uppercase", letterSpacing: .5, fontWeight: 700, marginBottom: 4, fontFamily: "var(--afm)" }}>Status</div>
+                <select value={selected.status} onChange={e => updateReport(selected.id, { status: e.target.value })} disabled={busy} style={{ width: "100%", padding: "9px 12px", background: "var(--a-bg)", color: "var(--a-t)", border: "1px solid var(--a-b)", borderRadius: 6, fontSize: 13, fontFamily: "var(--afb)" }}>
+                  <option value="open">Open</option>
+                  <option value="in_progress">In Progress</option>
+                  <option value="resolved">Resolved</option>
+                  <option value="closed">Closed</option>
+                </select>
+              </div>
+              <div>
+                <div style={{ fontSize: 10.5, color: "var(--a-t3)", textTransform: "uppercase", letterSpacing: .5, fontWeight: 700, marginBottom: 4, fontFamily: "var(--afm)" }}>Priority</div>
+                <select value={selected.priority} onChange={e => updateReport(selected.id, { priority: e.target.value })} disabled={busy} style={{ width: "100%", padding: "9px 12px", background: "var(--a-bg)", color: "var(--a-t)", border: "1px solid var(--a-b)", borderRadius: 6, fontSize: 13, fontFamily: "var(--afb)" }}>
+                  <option value="low">Low</option>
+                  <option value="normal">Normal</option>
+                  <option value="high">High</option>
+                  <option value="critical">Critical</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <div style={{ fontSize: 10.5, color: "var(--a-t3)", textTransform: "uppercase", letterSpacing: .5, fontWeight: 700, marginBottom: 4, fontFamily: "var(--afm)" }}>Admin Notes (private)</div>
+              <textarea defaultValue={selected.admin_notes || ""} placeholder="Internal notes — followups, fix details, links..." onBlur={e => { if (e.target.value !== (selected.admin_notes || "")) updateReport(selected.id, { admin_notes: e.target.value }); }} style={{ width: "100%", padding: "9px 12px", background: "var(--a-bg)", color: "var(--a-t)", border: "1px solid var(--a-b)", borderRadius: 6, fontSize: 13, fontFamily: "var(--afb)", minHeight: 80, resize: "vertical" }} />
+              <div style={{ fontSize: 10.5, color: "var(--a-t3)", marginTop: 4 }}>Saves when you click outside the box</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>}
   </div>;
 }
 
