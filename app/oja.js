@@ -38,7 +38,7 @@ export default function App() {
   return <><style>{CSS}</style><Dashboard session={session} profile={profile} onProfile={setProfile} /></>;
 }
 
-function AuthScreen() {
+export function AuthScreen() {
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState(""); const [password, setPassword] = useState("");
   const [error, setError] = useState(""); const [msg, setMsg] = useState(""); const [busy, setBusy] = useState(false);
@@ -73,7 +73,7 @@ function AuthScreen() {
   </div></div>;
 }
 
-function Onboarding({ session, onComplete }) {
+export function Onboarding({ session, onComplete }) {
   const [step, setStep] = useState(1);
   const [name, setName] = useState(""); const [type, setType] = useState(""); const [phone, setPhone] = useState("");
   const [busy, setBusy] = useState(false);
@@ -119,7 +119,7 @@ function Onboarding({ session, onComplete }) {
   </div></div>;
 }
 
-function Dashboard({ session, profile, onProfile }) {
+export function Dashboard({ session, profile, onProfile }) {
   const [page, setPage] = useState("dashboard");
   const [items, setItems] = useState([]); const [customers, setCustomers] = useState([]);
   const [orders, setOrders] = useState([]); const [invoices, setInvoices] = useState([]);
@@ -347,7 +347,7 @@ function BulkUpload({ session, biz, items, setItems, close }) {
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = "oja-items-template.csv"; a.click();
+    a.href = url; a.download = "stallhq-items-template.csv"; a.click();
     URL.revokeObjectURL(url);
   };
 

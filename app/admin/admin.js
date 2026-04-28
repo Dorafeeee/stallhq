@@ -58,7 +58,7 @@ function AdminLogin() {
     setBusy(false);
   };
   return <div className="admin-login"><div className="al-card">
-    <div className="al-title">Oja Admin</div>
+    <div className="al-title">StallHQ Admin</div>
     <div className="al-h">Sign in</div>
     {err && <div className="al-msg">{err}</div>}
     <form onSubmit={submit}>
@@ -71,7 +71,7 @@ function AdminLogin() {
 
 function NotAuthorized({ email }) {
   return <div className="admin-login"><div className="al-card">
-    <div className="al-title">Oja Admin</div>
+    <div className="al-title">StallHQ Admin</div>
     <div className="al-h">Access Denied</div>
     <div className="al-msg">The account <b>{email}</b> does not have admin permissions.</div>
     <button onClick={() => supabase.auth.signOut()} style={{ marginTop: 16, padding: "10px 20px", background: "var(--a-sh)", color: "var(--a-t)", border: "1px solid var(--a-b)", borderRadius: 8, cursor: "pointer", fontFamily: "var(--afb)", fontSize: 13 }}>Sign out</button>
@@ -118,15 +118,15 @@ function AdminShell({ session, profile }) {
   if (!data) return <div className="a-loading"><div className="a-spinner" /></div>;
 
   return <div className="admin-shell">
-    <div className="a-mobheader"><div className="bn">Oja Admin</div><button className="a-mobbtn" onClick={() => setSidebarOpen(!sidebarOpen)}>{I.menu}</button></div>
+    <div className="a-mobheader"><div className="bn">StallHQ Admin</div><button className="a-mobbtn" onClick={() => setSidebarOpen(!sidebarOpen)}>{I.menu}</button></div>
     <div className={`a-ov ${sidebarOpen ? "open" : ""}`} onClick={() => setSidebarOpen(false)} />
     <aside className={`admin-side ${sidebarOpen ? "open" : ""}`}>
-      <div className="admin-brand"><span>Oja Admin</span><span className="adot"></span></div>
+      <div className="admin-brand"><span>StallHQ Admin</span><span className="adot"></span></div>
       <nav className="admin-nav">{NAV.map(n => <button key={n.id} className={`ani ${page === n.id ? "act" : ""}`} onClick={() => { setPage(n.id); setSidebarOpen(false); }}>{n.label}</button>)}</nav>
       <div className="admin-footer">
         <div className="aft">{profile.business_email || session.user.email}</div>
         <button className="af-btn" onClick={logout}>{I.logout} Sign out</button>
-        <a href="/" className="af-btn" style={{ textDecoration: "none", marginTop: 4 }}>{I.arr} Back to Oja</a>
+        <a href="/" className="af-btn" style={{ textDecoration: "none", marginTop: 4 }}>{I.arr} Back to StallHQ</a>
       </div>
     </aside>
     <main className="admin-main">
