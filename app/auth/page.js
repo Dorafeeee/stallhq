@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
-import { CSS } from "../../lib/styles";
+import "../app.css";
 import { AuthScreen } from "../oja";
 
 export default function AuthPage() {
@@ -23,6 +23,6 @@ export default function AuthPage() {
     return () => sub.subscription.unsubscribe();
   }, [router]);
 
-  if (!checked) return <><style>{CSS}</style><div className="loading-screen"><div className="spinner" /></div></>;
-  return <><style>{CSS}</style><AuthScreen /></>;
+  if (!checked) return <div className="loading-screen"><div className="spinner" /></div>;
+  return <AuthScreen />;
 }

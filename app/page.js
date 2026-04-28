@@ -261,7 +261,7 @@ export default function Landing() {
           </div>
         </div>
         <div className="lp-footer-bottom">
-          <span>© 2026 StallHQ. Made in Lagos.</span>
+          <span>© 2026 StallHQ</span>
         </div>
       </footer>
     </div>
@@ -423,59 +423,8 @@ function DemoTabsPlaceholder() {
 }
 
 function DemoStorefront() {
-  const products = [
-    { id: 1, name: "Banana bread", price: 4500, stock: 14, color: "#E8C794", icon: "bread" },
-    { id: 2, name: "Coconut cookies", price: 2200, stock: 28, color: "#F2DCC4", icon: "cookie" },
-    { id: 3, name: "Mixed pastry box", price: 8900, stock: 3, color: "#D9A881", icon: "box" },
-    { id: 4, name: "Chocolate brownie", price: 1500, stock: 22, color: "#8C5A3F", icon: "brownie" },
-  ];
-  const [cart, setCart] = useState({});
-  const total = Object.entries(cart).reduce((sum, [id, qty]) => sum + (products.find(p => p.id === +id).price * qty), 0);
-  const itemCount = Object.values(cart).reduce((a, b) => a + b, 0);
-  const fmt = n => `₦${n.toLocaleString()}`;
-
-  return <div className="lp-demo-store">
-    <div className="lp-demo-store-head">
-      <div>
-        <div className="lp-demo-store-name">Bola's Bakery</div>
-        <div className="lp-demo-store-meta">★ 4.9 · 47 reviews · Lagos</div>
-      </div>
-      <div className="lp-demo-store-cart">
-        {itemCount > 0 && <span className="lp-demo-store-cart-count">{itemCount}</span>}
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/></svg>
-      </div>
-    </div>
-
-    <div className="lp-demo-store-grid">
-      {products.map(p => {
-        const qty = cart[p.id] || 0;
-        return <div key={p.id} className="lp-demo-prod">
-          <div className="lp-demo-prod-img" style={{ background: `linear-gradient(135deg, ${p.color}, ${p.color}aa)` }}>
-            <ProductIcon kind={p.icon} />
-            {p.stock <= 5 && <span className="lp-demo-prod-low">Only {p.stock} left</span>}
-          </div>
-          <div className="lp-demo-prod-name">{p.name}</div>
-          <div className="lp-demo-prod-price">{fmt(p.price)}</div>
-          {qty === 0 ? (
-            <button className="lp-demo-prod-btn" onClick={() => setCart({ ...cart, [p.id]: 1 })}>Add to cart</button>
-          ) : (
-            <div className="lp-demo-prod-qty">
-              <button onClick={() => { const n = qty - 1; if (n <= 0) { const c = { ...cart }; delete c[p.id]; setCart(c); } else setCart({ ...cart, [p.id]: n }); }}>−</button>
-              <span>{qty}</span>
-              <button disabled={qty >= p.stock} onClick={() => setCart({ ...cart, [p.id]: qty + 1 })}>+</button>
-            </div>
-          )}
-        </div>;
-      })}
-    </div>
-
-    {itemCount > 0 && <div className="lp-demo-store-bar">
-      <div className="lp-demo-store-bar-l">
-        <span className="lp-demo-store-bar-count">{itemCount} {itemCount === 1 ? "item" : "items"}</span>
-        <span className="lp-demo-store-bar-total">{fmt(total)}</span>
-      </div>
-      <button className="lp-demo-store-bar-btn">Checkout →</button>
-    </div>}
+  return <div className="lp-demo-store" style={{padding:0,background:'transparent',border:'none',boxShadow:'none'}}>
+    <img src="/storefront-demo.png" alt="StallHQ customer storefront preview" style={{width:'100%',height:'auto',borderRadius:'12px',display:'block'}} />
   </div>;
 }
 
@@ -633,17 +582,49 @@ function DemoOrder() {
 
 // ─────────────── Tiny inline icon visuals for pillars + features ───────────────
 function ProductIcon({ kind }) {
-  // Stylized illustrations of bakery products. Brown stroke on the gradient background.
+  // Bold, friendly illustrations of bakery products
   const stroke = "#5C3A1F";
-  const common = { width: 64, height: 64, viewBox: "0 0 64 64", fill: "none", stroke, strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round" };
-  const w = (
-    kind === "bread" ? <svg {...common}><path d="M12 32c0-7 6-12 14-12h12c8 0 14 5 14 12v4c0 5-4 8-8 8H20c-4 0-8-3-8-8z"/><path d="M22 28c0 4 0 8 2 12M32 26c0 6 0 10 2 14M42 28c0 4 0 8 2 12" opacity=".5"/></svg> :
-    kind === "cookie" ? <svg {...common}><circle cx="32" cy="32" r="16"/><circle cx="26" cy="28" r="1.5" fill={stroke}/><circle cx="36" cy="26" r="1.5" fill={stroke}/><circle cx="34" cy="36" r="1.5" fill={stroke}/><circle cx="24" cy="36" r="1.5" fill={stroke}/><circle cx="38" cy="34" r="1.5" fill={stroke}/></svg> :
-    kind === "box" ? <svg {...common}><path d="M14 22h36v24H14z"/><path d="M14 22l4-6h28l4 6"/><path d="M32 22v24" opacity=".5"/><circle cx="32" cy="34" r="1.5" fill={stroke}/></svg> :
-    kind === "brownie" ? <svg {...common}><rect x="14" y="20" width="36" height="24" rx="2"/><path d="M22 26l4 4M30 24l5 6M40 26l5 5M22 36l5 5M34 36l4 4" opacity=".5"/></svg> :
-    null
-  );
-  return <div className="lp-demo-prod-icon">{w}</div>;
+  const fill = "#B14B2C";
+  const common = { width: 96, height: 96, viewBox: "0 0 96 96", fill: "none", strokeLinecap: "round", strokeLinejoin: "round" };
+  
+  const icons = {
+    bread: <svg {...common}>
+      <ellipse cx="48" cy="54" rx="34" ry="24" fill="#E8C794"/>
+      <path d="M18 48c0-10 10-18 24-18h12c14 0 24 8 24 18" stroke={stroke} strokeWidth="3.5" fill="none"/>
+      <line x1="30" y1="42" x2="30" y2="54" stroke={stroke} strokeWidth="3" opacity="0.35"/>
+      <line x1="42" y1="40" x2="42" y2="54" stroke={stroke} strokeWidth="3" opacity="0.35"/>
+      <line x1="54" y1="40" x2="54" y2="54" stroke={stroke} strokeWidth="3" opacity="0.35"/>
+      <line x1="66" y1="42" x2="66" y2="54" stroke={stroke} strokeWidth="3" opacity="0.35"/>
+    </svg>,
+    
+    cookie: <svg {...common}>
+      <circle cx="48" cy="48" r="28" fill="#F2DCC4"/>
+      <circle cx="48" cy="48" r="28" stroke="#D9A881" strokeWidth="3"/>
+      <circle cx="38" cy="42" r="3.5" fill={fill}/>
+      <circle cx="54" cy="43" r="3.5" fill={fill}/>
+      <circle cx="44" cy="54" r="3.5" fill={fill}/>
+      <circle cx="56" cy="55" r="3.5" fill={fill}/>
+      <circle cx="38" cy="56" r="3" fill="#8C3920"/>
+      <circle cx="60" cy="46" r="2.5" fill="#8C3920"/>
+    </svg>,
+    
+    box: <svg {...common}>
+      <rect x="24" y="33" width="48" height="34" rx="2.5" fill="#E8C794" stroke={stroke} strokeWidth="3"/>
+      <path d="M24 33l6-10h36l6 10" fill="#D9A881" stroke={stroke} strokeWidth="3" strokeLinejoin="round"/>
+      <line x1="48" y1="33" x2="48" y2="67" stroke={stroke} strokeWidth="2.5" opacity="0.3"/>
+      <circle cx="48" cy="50" r="3" fill={fill}/>
+    </svg>,
+    
+    brownie: <svg {...common}>
+      <rect x="24" y="36" width="48" height="28" rx="3.5" fill="#8C5A3F"/>
+      <rect x="24" y="36" width="48" height="28" rx="3.5" stroke={stroke} strokeWidth="3"/>
+      <path d="M34 46l6 6M45 43l7 9M60 46l6 6" stroke="#FAEAE2" strokeWidth="3" strokeLinecap="round" opacity="0.4"/>
+      <circle cx="40" cy="56" r="2" fill="#FAEAE2" opacity="0.5"/>
+      <circle cx="56" cy="57" r="2" fill="#FAEAE2" opacity="0.5"/>
+    </svg>
+  };
+  
+  return <div className="lp-demo-prod-icon">{icons[kind]}</div>;
 }
 
 function PillarShop() { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" width="28" height="28"><path d="M3 9l1-5h16l1 5"/><path d="M5 9v11a1 1 0 001 1h12a1 1 0 001-1V9"/><path d="M9 21V12h6v9"/></svg>; }
@@ -652,82 +633,244 @@ function PillarPaid() { return <svg viewBox="0 0 24 24" fill="none" stroke="curr
 
 // Compact illustrated mockups for each feature row
 function FeatureStorefront() {
-  return <div className="lp-feat-mock">
-    <div className="lp-feat-mock-grid">
-      <div className="lp-feat-card"><div className="lp-feat-card-img" /><div className="lp-feat-card-line" /><div className="lp-feat-card-price">₦4,500</div></div>
-      <div className="lp-feat-card"><div className="lp-feat-card-img" /><div className="lp-feat-card-line" /><div className="lp-feat-card-price">₦2,200</div></div>
-      <div className="lp-feat-card"><div className="lp-feat-card-img" /><div className="lp-feat-card-line" /><div className="lp-feat-card-price">₦8,900</div></div>
-      <div className="lp-feat-card"><div className="lp-feat-card-img" /><div className="lp-feat-card-line" /><div className="lp-feat-card-price">₦1,500</div></div>
+  // Bold illustrated storefront - large friendly visuals
+  return <div className="lp-feat-mock" style={{background:'linear-gradient(135deg, #FAEAE2 0%, #F9E5D9 100%)',padding:'40px 32px',borderRadius:'16px'}}>
+    <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:'20px'}}>
+      {/* Product 1 - Bread */}
+      <div style={{background:'#fff',borderRadius:'12px',padding:'20px',boxShadow:'0 4px 16px rgba(177,75,44,.12)',textAlign:'center'}}>
+        <div style={{width:'100%',height:'120px',display:'flex',alignItems:'center',justifyContent:'center',marginBottom:'16px'}}>
+          <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+            <ellipse cx="40" cy="45" rx="28" ry="20" fill="#E8C794"/>
+            <path d="M15 40c0-8 8-15 20-15h10c12 0 20 7 20 15" stroke="#B14B2C" strokeWidth="3" fill="none" strokeLinecap="round"/>
+            <line x1="25" y1="35" x2="25" y2="45" stroke="#B14B2C" strokeWidth="2.5" strokeLinecap="round" opacity="0.4"/>
+            <line x1="35" y1="33" x2="35" y2="45" stroke="#B14B2C" strokeWidth="2.5" strokeLinecap="round" opacity="0.4"/>
+            <line x1="45" y1="33" x2="45" y2="45" stroke="#B14B2C" strokeWidth="2.5" strokeLinecap="round" opacity="0.4"/>
+            <line x1="55" y1="35" x2="55" y2="45" stroke="#B14B2C" strokeWidth="2.5" strokeLinecap="round" opacity="0.4"/>
+          </svg>
+        </div>
+        <div style={{height:'8px',background:'#F2EFE8',borderRadius:'4px',width:'75%',margin:'0 auto 8px'}}/>
+        <div style={{fontFamily:'IBM Plex Mono,monospace',fontSize:'16px',fontWeight:'700',color:'#B14B2C'}}>₦4,500</div>
+      </div>
+      
+      {/* Product 2 - Cookie */}
+      <div style={{background:'#fff',borderRadius:'12px',padding:'20px',boxShadow:'0 4px 16px rgba(177,75,44,.12)',textAlign:'center'}}>
+        <div style={{width:'100%',height:'120px',display:'flex',alignItems:'center',justifyContent:'center',marginBottom:'16px'}}>
+          <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+            <circle cx="40" cy="40" r="24" fill="#F2DCC4"/>
+            <circle cx="40" cy="40" r="24" stroke="#D9A881" strokeWidth="2.5"/>
+            <circle cx="32" cy="35" r="3" fill="#B14B2C"/>
+            <circle cx="46" cy="36" r="3" fill="#B14B2C"/>
+            <circle cx="38" cy="45" r="3" fill="#B14B2C"/>
+            <circle cx="48" cy="46" r="3" fill="#B14B2C"/>
+            <circle cx="33" cy="48" r="2.5" fill="#8C3920"/>
+          </svg>
+        </div>
+        <div style={{height:'8px',background:'#F2EFE8',borderRadius:'4px',width:'70%',margin:'0 auto 8px'}}/>
+        <div style={{fontFamily:'IBM Plex Mono,monospace',fontSize:'16px',fontWeight:'700',color:'#B14B2C'}}>₦2,200</div>
+      </div>
+      
+      {/* Product 3 - Box with stock warning */}
+      <div style={{background:'#fff',borderRadius:'12px',padding:'20px',boxShadow:'0 4px 16px rgba(177,75,44,.12)',textAlign:'center',position:'relative'}}>
+        <div style={{position:'absolute',top:'12px',left:'12px',background:'#B14B2C',color:'#fff',fontSize:'11px',fontWeight:'700',padding:'5px 10px',borderRadius:'12px',fontFamily:'IBM Plex Mono,monospace',letterSpacing:'.3px'}}>3 left</div>
+        <div style={{width:'100%',height:'120px',display:'flex',alignItems:'center',justifyContent:'center',marginBottom:'16px'}}>
+          <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+            <rect x="20" y="28" width="40" height="28" rx="2" fill="#E8C794" stroke="#B14B2C" strokeWidth="2.5"/>
+            <path d="M20 28l5-8h30l5 8" fill="#D9A881" stroke="#B14B2C" strokeWidth="2.5" strokeLinejoin="round"/>
+            <line x1="40" y1="28" x2="40" y2="56" stroke="#B14B2C" strokeWidth="2" opacity="0.3"/>
+            <circle cx="40" cy="42" r="2.5" fill="#B14B2C"/>
+          </svg>
+        </div>
+        <div style={{height:'8px',background:'#F2EFE8',borderRadius:'4px',width:'80%',margin:'0 auto 8px'}}/>
+        <div style={{fontFamily:'IBM Plex Mono,monospace',fontSize:'16px',fontWeight:'700',color:'#B14B2C'}}>₦8,900</div>
+      </div>
+      
+      {/* Product 4 - Brownie */}
+      <div style={{background:'#fff',borderRadius:'12px',padding:'20px',boxShadow:'0 4px 16px rgba(177,75,44,.12)',textAlign:'center'}}>
+        <div style={{width:'100%',height:'120px',display:'flex',alignItems:'center',justifyContent:'center',marginBottom:'16px'}}>
+          <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+            <rect x="20" y="30" width="40" height="24" rx="3" fill="#8C5A3F"/>
+            <rect x="20" y="30" width="40" height="24" rx="3" stroke="#5C3A1F" strokeWidth="2.5"/>
+            <path d="M28 38l5 5M38 36l6 7M50 38l5 5" stroke="#FAEAE2" strokeWidth="2.5" strokeLinecap="round" opacity="0.4"/>
+            <circle cx="33" cy="47" r="1.5" fill="#FAEAE2" opacity="0.5"/>
+            <circle cx="47" cy="48" r="1.5" fill="#FAEAE2" opacity="0.5"/>
+          </svg>
+        </div>
+        <div style={{height:'8px',background:'#F2EFE8',borderRadius:'4px',width:'65%',margin:'0 auto 8px'}}/>
+        <div style={{fontFamily:'IBM Plex Mono,monospace',fontSize:'16px',fontWeight:'700',color:'#B14B2C'}}>₦1,500</div>
+      </div>
     </div>
   </div>;
 }
 
 function FeatureStock() {
-  return <div className="lp-feat-mock">
-    <div className="lp-stock-row"><span>Banana bread</span><span className="lp-stock-num">14</span></div>
-    <div className="lp-stock-row"><span>Coconut cookies</span><span className="lp-stock-num">28</span></div>
-    <div className="lp-stock-row lp-stock-low"><span>Mixed pastry box</span><span className="lp-stock-num">3</span></div>
-    <div className="lp-stock-warning">Only 3 left — order soon</div>
+  // Illustrated stock levels with visual progress
+  return <div className="lp-feat-mock" style={{background:'linear-gradient(135deg, #ECF2FE 0%, #F1ECFE 100%)',padding:'28px'}}>
+    <div style={{display:'flex',flexDirection:'column',gap:'18px'}}>
+      {/* High stock item */}
+      <div style={{background:'#fff',borderRadius:'10px',padding:'14px',boxShadow:'0 2px 8px rgba(29,91,214,.06)'}}>
+        <div style={{display:'flex',justifyContent:'space-between',marginBottom:'8px'}}>
+          <span style={{fontSize:'13px',fontWeight:'600',color:'#141413'}}>Banana bread</span>
+          <span style={{fontFamily:'IBM Plex Mono,monospace',fontSize:'14px',fontWeight:'700',color:'#0F6E56'}}>28</span>
+        </div>
+        <div style={{height:'8px',background:'#EFEBE0',borderRadius:'4px',overflow:'hidden'}}>
+          <div style={{height:'100%',width:'85%',background:'linear-gradient(90deg, #0F6E56, #4CAF93)',borderRadius:'4px'}}/>
+        </div>
+      </div>
+      
+      {/* Medium stock item */}
+      <div style={{background:'#fff',borderRadius:'10px',padding:'14px',boxShadow:'0 2px 8px rgba(29,91,214,.06)'}}>
+        <div style={{display:'flex',justifyContent:'space-between',marginBottom:'8px'}}>
+          <span style={{fontSize:'13px',fontWeight:'600',color:'#141413'}}>Coconut cookies</span>
+          <span style={{fontFamily:'IBM Plex Mono,monospace',fontSize:'14px',fontWeight:'700',color:'#1D5BD6'}}>12</span>
+        </div>
+        <div style={{height:'8px',background:'#EFEBE0',borderRadius:'4px',overflow:'hidden'}}>
+          <div style={{height:'100%',width:'45%',background:'linear-gradient(90deg, #1D5BD6, #5B8EF5)',borderRadius:'4px'}}/>
+        </div>
+      </div>
+      
+      {/* Low stock item with warning */}
+      <div style={{background:'#FAEAE2',borderRadius:'10px',padding:'14px',border:'1.5px solid #B14B2C'}}>
+        <div style={{display:'flex',justifyContent:'space-between',marginBottom:'8px'}}>
+          <span style={{fontSize:'13px',fontWeight:'600',color:'#141413'}}>Mixed pastry box</span>
+          <span style={{fontFamily:'IBM Plex Mono,monospace',fontSize:'14px',fontWeight:'700',color:'#B14B2C'}}>3</span>
+        </div>
+        <div style={{height:'8px',background:'#fff',borderRadius:'4px',overflow:'hidden'}}>
+          <div style={{height:'100%',width:'12%',background:'linear-gradient(90deg, #B14B2C, #E27A52)',borderRadius:'4px'}}/>
+        </div>
+        <div style={{marginTop:'10px',fontSize:'11px',fontWeight:'600',color:'#B14B2C',fontFamily:'IBM Plex Mono,monospace'}}>⚠ Only 3 left</div>
+      </div>
+    </div>
   </div>;
 }
 
 function FeatureInvoice() {
-  return <div className="lp-feat-mock lp-invoice-mock">
-    <div className="lp-invoice-head">
-      <span className="lp-invoice-num">INV-024</span>
-      <span className="lp-invoice-status">Awaiting payment</span>
+  // Illustrated invoice document
+  return <div className="lp-feat-mock" style={{background:'linear-gradient(135deg, #FEF7E6 0%, #FCF3D9 100%)',padding:'28px',position:'relative'}}>
+    {/* Paper illustration */}
+    <div style={{background:'#fff',borderRadius:'10px',padding:'18px',boxShadow:'0 4px 16px rgba(169,112,8,.12)',position:'relative'}}>
+      {/* Header with logo placeholder and invoice number */}
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'16px',paddingBottom:'12px',borderBottom:'1.5px dashed #EFEBE0'}}>
+        <div style={{width:'32px',height:'32px',borderRadius:'6px',background:'linear-gradient(135deg, #B14B2C, #E27A52)'}}/>
+        <div style={{fontFamily:'IBM Plex Mono,monospace',fontSize:'11px',fontWeight:'700',color:'#9A968B'}}>INV-024</div>
+      </div>
+      
+      {/* Line items */}
+      <div style={{display:'flex',flexDirection:'column',gap:'8px',marginBottom:'12px'}}>
+        <div style={{display:'flex',justifyContent:'space-between',fontSize:'13px',color:'#5F5C53'}}>
+          <span>Bridal makeup × 1</span>
+          <span style={{fontFamily:'IBM Plex Mono,monospace',fontWeight:'600'}}>₦80,000</span>
+        </div>
+        <div style={{display:'flex',justifyContent:'space-between',fontSize:'13px',color:'#5F5C53'}}>
+          <span>Travel fee</span>
+          <span style={{fontFamily:'IBM Plex Mono,monospace',fontWeight:'600'}}>₦5,000</span>
+        </div>
+      </div>
+      
+      {/* Total */}
+      <div style={{paddingTop:'12px',borderTop:'2px solid #141413',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <span style={{fontSize:'14px',fontWeight:'700',color:'#141413'}}>Total</span>
+        <span style={{fontFamily:'IBM Plex Mono,monospace',fontSize:'16px',fontWeight:'700',color:'#B14B2C'}}>₦85,000</span>
+      </div>
+      
+      {/* Status badge */}
+      <div style={{position:'absolute',top:'-8px',right:'18px',background:'#FEF7E6',border:'1.5px solid #A97008',borderRadius:'16px',padding:'4px 12px',fontSize:'10px',fontWeight:'700',color:'#A97008',textTransform:'uppercase',letterSpacing:'.5px'}}>
+        Awaiting payment
+      </div>
     </div>
-    <div className="lp-invoice-line"><span>Bridal makeup × 1</span><span>₦80,000</span></div>
-    <div className="lp-invoice-line"><span>Travel fee</span><span>₦5,000</span></div>
-    <div className="lp-invoice-total"><span>Total</span><span>₦85,000</span></div>
   </div>;
 }
 
 function FeatureReviews() {
-  return <div className="lp-feat-mock">
-    <div className="lp-rev-summary">
-      <span className="lp-rev-stars">★★★★★</span>
-      <span className="lp-rev-num">4.9</span>
-      <span className="lp-rev-count">· 47 reviews</span>
+  // Illustrated star rating visualization
+  return <div className="lp-feat-mock" style={{background:'linear-gradient(135deg, #F1ECFE 0%, #E8DDF9 100%)',padding:'28px'}}>
+    {/* Big star display */}
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:'12px',marginBottom:'20px'}}>
+      <div style={{fontSize:'48px',lineHeight:'1',color:'#B14B2C',letterSpacing:'2px'}}>★★★★★</div>
     </div>
-    <div className="lp-rev-bar"><div className="lp-rev-bar-fill" style={{ width: "92%" }} /></div>
-    <div className="lp-rev-bar"><div className="lp-rev-bar-fill" style={{ width: "78%" }} /></div>
-    <div className="lp-rev-bar"><div className="lp-rev-bar-fill" style={{ width: "12%" }} /></div>
-    <div className="lp-rev-bar"><div className="lp-rev-bar-fill" style={{ width: "4%" }} /></div>
-    <div className="lp-rev-bar"><div className="lp-rev-bar-fill" style={{ width: "2%" }} /></div>
+    
+    {/* Rating number */}
+    <div style={{textAlign:'center',marginBottom:'20px'}}>
+      <div style={{fontSize:'32px',fontWeight:'700',fontFamily:'IBM Plex Mono,monospace',color:'#141413',lineHeight:'1'}}>4.9</div>
+      <div style={{fontSize:'12px',color:'#9A968B',marginTop:'4px'}}>from 47 reviews</div>
+    </div>
+    
+    {/* Distribution bars */}
+    <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+      {[
+        {stars:5,width:92,count:43},
+        {stars:4,width:6,count:3},
+        {stars:3,width:2,count:1},
+        {stars:2,width:0,count:0},
+        {stars:1,width:0,count:0}
+      ].map(({stars,width,count})=>(
+        <div key={stars} style={{display:'flex',alignItems:'center',gap:'8px'}}>
+          <span style={{fontSize:'11px',fontFamily:'IBM Plex Mono,monospace',color:'#9A968B',width:'12px'}}>{stars}</span>
+          <div style={{flex:'1',height:'6px',background:'#fff',borderRadius:'3px',overflow:'hidden'}}>
+            <div style={{height:'100%',width:`${width}%`,background:'linear-gradient(90deg, #B14B2C, #E27A52)',borderRadius:'3px',transition:'width .4s'}}/>
+          </div>
+          <span style={{fontSize:'10px',fontFamily:'IBM Plex Mono,monospace',color:'#9A968B',width:'20px',textAlign:'right'}}>{count}</span>
+        </div>
+      ))}
+    </div>
   </div>;
 }
 
 function FeatureMetrics() {
-  // Tiny illustration of stat cards + a sparkline chart
-  return <div className="lp-feat-mock">
-    <div className="lp-feat-met-grid">
-      <div className="lp-feat-met-card">
-        <div className="lp-feat-met-l">Revenue this week</div>
-        <div className="lp-feat-met-v">₦1.62M</div>
-        <div className="lp-feat-met-trend">↑ 12% vs last week</div>
+  // Illustrated metrics dashboard
+  return <div className="lp-feat-mock" style={{background:'linear-gradient(135deg, #ECF2FE 0%, #E8F4F8 100%)',padding:'28px'}}>
+    {/* Stat cards */}
+    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'16px'}}>
+      <div style={{background:'#fff',borderRadius:'10px',padding:'14px',boxShadow:'0 2px 8px rgba(29,91,214,.08)'}}>
+        <div style={{fontSize:'9px',color:'#9A968B',textTransform:'uppercase',letterSpacing:'.8px',fontWeight:'600',fontFamily:'IBM Plex Mono,monospace',marginBottom:'6px'}}>Revenue</div>
+        <div style={{fontFamily:'IBM Plex Mono,monospace',fontSize:'20px',fontWeight:'700',color:'#141413',lineHeight:'1',marginBottom:'4px'}}>₦1.62M</div>
+        <div style={{fontSize:'10px',color:'#0F6E56',fontFamily:'IBM Plex Mono,monospace',fontWeight:'500'}}>↑ 12% vs last week</div>
       </div>
-      <div className="lp-feat-met-card">
-        <div className="lp-feat-met-l">Orders today</div>
-        <div className="lp-feat-met-v">13</div>
-        <div className="lp-feat-met-trend lp-feat-met-trend-warn">3 awaiting action</div>
+      <div style={{background:'#fff',borderRadius:'10px',padding:'14px',boxShadow:'0 2px 8px rgba(29,91,214,.08)'}}>
+        <div style={{fontSize:'9px',color:'#9A968B',textTransform:'uppercase',letterSpacing:'.8px',fontWeight:'600',fontFamily:'IBM Plex Mono,monospace',marginBottom:'6px'}}>Orders</div>
+        <div style={{fontFamily:'IBM Plex Mono,monospace',fontSize:'20px',fontWeight:'700',color:'#141413',lineHeight:'1',marginBottom:'4px'}}>13</div>
+        <div style={{fontSize:'10px',color:'#B14B2C',fontFamily:'IBM Plex Mono,monospace',fontWeight:'500'}}>3 awaiting action</div>
       </div>
     </div>
-    <div className="lp-feat-met-chart">
-      <div className="lp-feat-met-chart-h">Last 7 days</div>
-      <div className="lp-feat-met-bars">
-        <div style={{ height: "55%" }} /><div style={{ height: "68%" }} /><div style={{ height: "50%" }} /><div style={{ height: "89%" }} /><div style={{ height: "74%" }} /><div style={{ height: "60%" }} /><div style={{ height: "100%" }} />
+    
+    {/* Chart illustration */}
+    <div style={{background:'#fff',borderRadius:'10px',padding:'14px',boxShadow:'0 2px 8px rgba(29,91,214,.08)'}}>
+      <div style={{fontSize:'9px',color:'#9A968B',textTransform:'uppercase',letterSpacing:'.8px',fontWeight:'600',fontFamily:'IBM Plex Mono,monospace',marginBottom:'12px'}}>Last 7 days</div>
+      <div style={{display:'flex',alignItems:'flex-end',gap:'6px',height:'60px'}}>
+        {[55,68,50,89,74,60,100].map((h,i)=>(
+          <div key={i} style={{flex:'1',background:i===6?'linear-gradient(180deg, #B14B2C, #E27A52)':'linear-gradient(180deg, #1D5BD6, #5B8EF5)',height:`${h}%`,borderRadius:'4px 4px 0 0',transition:'height .4s'}}/>
+        ))}
+      </div>
+      <div style={{display:'flex',justifyContent:'space-between',marginTop:'8px',fontSize:'9px',color:'#9A968B',fontFamily:'IBM Plex Mono,monospace'}}>
+        {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((d,i)=><span key={i}>{d}</span>)}
       </div>
     </div>
   </div>;
 }
 
 function FeatureBulk() {
-  return <div className="lp-feat-mock">
-    <div className="lp-bulk-row lp-bulk-ok"><span>Banana bread</span><span>₦10,000</span><span className="lp-bulk-tag">✓</span></div>
-    <div className="lp-bulk-row lp-bulk-ok"><span>Coconut cookies</span><span>₦5,000</span><span className="lp-bulk-tag">✓</span></div>
-    <div className="lp-bulk-row lp-bulk-err"><span>Pastry box</span><span>(invalid)</span><span className="lp-bulk-tag lp-bulk-tag-err">!</span></div>
-    <div className="lp-bulk-row lp-bulk-ok"><span>Croissants</span><span>₦3,500</span><span className="lp-bulk-tag">✓</span></div>
-    <div className="lp-bulk-summary">3 valid · 1 error</div>
+  // Illustrated CSV upload with validation
+  return <div className="lp-feat-mock" style={{background:'linear-gradient(135deg, #F1ECFE 0%, #FCF3F9 100%)',padding:'28px'}}>
+    {/* CSV rows with validation states */}
+    <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+      {[
+        {name:'Banana bread',price:'₦10,000',valid:true},
+        {name:'Coconut cookies',price:'₦5,000',valid:true},
+        {name:'Pastry box',price:'(invalid)',valid:false},
+        {name:'Croissants',price:'₦3,500',valid:true}
+      ].map((row,i)=>(
+        <div key={i} style={{background:row.valid?'#fff':'#FEF0EC',borderRadius:'8px',padding:'12px',display:'flex',alignItems:'center',gap:'10px',border:row.valid?'1px solid #EFEBE0':'1.5px solid #B5301A',boxShadow:row.valid?'0 1px 4px rgba(0,0,0,.04)':'none'}}>
+          <div style={{width:'24px',height:'24px',borderRadius:'50%',background:row.valid?'linear-gradient(135deg, #0F6E56, #4CAF93)':'linear-gradient(135deg, #B5301A, #D9534F)',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontSize:'12px',fontWeight:'700',flexShrink:0}}>
+            {row.valid?'✓':'!'}
+          </div>
+          <div style={{flex:'1',fontSize:'13px',color:'#141413',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{row.name}</div>
+          <div style={{fontFamily:'IBM Plex Mono,monospace',fontSize:'12px',fontWeight:'600',color:row.valid?'#B14B2C':'#B5301A'}}>{row.price}</div>
+        </div>
+      ))}
+    </div>
+    
+    {/* Summary footer */}
+    <div style={{marginTop:'14px',textAlign:'center',fontSize:'11px',fontFamily:'IBM Plex Mono,monospace',color:'#9A968B',fontWeight:'500'}}>
+      <span style={{color:'#0F6E56'}}>3 valid</span> · <span style={{color:'#B5301A'}}>1 error</span>
+    </div>
   </div>;
 }

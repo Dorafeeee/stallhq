@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { supabase } from "../../../lib/supabase";
-import { CSS } from "../../../lib/styles";
+import "../../app.css";
 import { I, OjaLogo } from "../../../lib/icons";
 import { fmt, fmtDate, FLOW_LABELS } from "../../../lib/utils";
 import { BugReportModal } from "../../oja";
@@ -55,8 +55,8 @@ export default function OrderStatus({ token }) {
 
   const copy = (text, id) => { navigator.clipboard.writeText(text); setCopied(id); setTimeout(() => setCopied(null), 1500); };
 
-  if (loading) return <><style>{CSS}</style><div className="loading-screen"><div className="spinner" /></div></>;
-  if (!order || !vendor) return <><style>{CSS}</style><div className="loading-screen"><div style={{ textAlign: "center", color: "var(--t2)" }}><OjaLogo w={60} color="var(--t3)" /><div style={{ marginTop: 20, fontSize: 15 }}>Order not found</div></div></div></>;
+  if (loading) return <div className="loading-screen"><div className="spinner" /></div>;
+  if (!order || !vendor) return <div className="loading-screen"><div style={{ textAlign: "center", color: "var(--t2)" }}><OjaLogo w={60} color="var(--t3)" /><div style={{ marginTop: 20, fontSize: 15 }}>Order not found</div></div></div>;
 
   const currentStep = stepIndex(order.flow_status);
   const cancelled = order.flow_status === "cancelled";
@@ -66,7 +66,6 @@ export default function OrderStatus({ token }) {
   const canReview = order.flow_status === "completed" && !order.reviewed_at;
 
   return <>
-    <style>{CSS}</style>
     <div className="order-wrap"><div className="order-card">
       <div className="order-head">
         <div className="order-biz">{vendor.business_name}</div>

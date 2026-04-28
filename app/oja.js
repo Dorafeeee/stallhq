@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase";
 import { CSS } from "../lib/styles";
-import { I, OjaLogo, OjaLogoSm } from "../lib/icons";
+import { I, OjaLogo, OjaLogoSm, StallMark, StallLogo } from "../lib/icons";
 import { uid, fmt, fmtDate, today, STATUSES, PAY_METHODS, FLOW_LABELS, compressImg, slugify, normalizePhone, genToken } from "../lib/utils";
 
 export default function App() {
@@ -56,7 +56,34 @@ export function AuthScreen() {
     } catch (err) { setError(err.message || "Something went wrong"); } finally { setBusy(false); }
   };
 
-  return <div className="auth-wrap"><div className="auth-card">
+  return <div className="auth-wrap">
+    {/* Background pattern */}
+    <div style={{position:'absolute',inset:0,opacity:0.15,pointerEvents:'none'}}>
+      <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <pattern id="auth-pattern" x="0" y="0" width="120" height="120" patternUnits="userSpaceOnUse">
+            {/* Stall/canopy icon */}
+            <path d="M20 25l-8-10h16l-8 10z" fill="#FAF7F3" opacity="0.8"/>
+            <rect x="14" y="25" width="12" height="15" fill="#FAF7F3" opacity="0.6"/>
+            
+            {/* Box icon */}
+            <rect x="70" y="15" width="18" height="16" stroke="#FAF7F3" strokeWidth="1.5" fill="none" opacity="0.7"/>
+            <path d="M70 15l3-5h12l3 5" stroke="#FAF7F3" strokeWidth="1.5" fill="none" opacity="0.7"/>
+            
+            {/* Shopping bag */}
+            <path d="M25 65h14v18h-14z" stroke="#FAF7F3" strokeWidth="1.5" fill="none" opacity="0.6"/>
+            <path d="M27 65v-3a4 4 0 018 0v3" stroke="#FAF7F3" strokeWidth="1.5" fill="none" opacity="0.6"/>
+            
+            {/* Product/package */}
+            <circle cx="82" cy="75" r="8" stroke="#FAF7F3" strokeWidth="1.5" fill="none" opacity="0.7"/>
+            <path d="M76 75h12M82 69v12" stroke="#FAF7F3" strokeWidth="1.5" opacity="0.5"/>
+          </pattern>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#auth-pattern)"/>
+      </svg>
+    </div>
+    
+    <div className="auth-card">
     <div className="auth-logo"><OjaLogo w={68} color="var(--g)" /></div>
     <div className="auth-title">{mode === "signup" ? "Create your account" : "Welcome back"}</div>
     <div className="auth-sub">{mode === "signup" ? "Start managing your business in under 2 minutes" : "Sign in to your dashboard"}</div>
@@ -69,6 +96,9 @@ export function AuthScreen() {
     </form>
     <div className="auth-sw">
       {mode === "login" ? <>New here? <button onClick={() => { setMode("signup"); setError(""); setMsg(""); }}>Create an account</button></> : <>Have an account? <button onClick={() => { setMode("login"); setError(""); setMsg(""); }}>Sign in</button></>}
+    </div>
+    <div style={{textAlign:'center',marginTop:'20px',fontSize:'13px',color:'#999'}}>
+      Having issues? <a href="mailto:olajumokedorathyolajide@gmail.com" style={{color:'var(--ac)',textDecoration:'none',fontWeight:'500'}}>Report a problem</a>
     </div>
   </div></div>;
 }
@@ -177,10 +207,36 @@ export function Dashboard({ session, profile, onProfile }) {
   if (!loaded) return <div className="loading-screen"><div className="spinner" /></div>;
 
   return <div className="app">
-    <div className="mh-bar"><OjaLogoSm /><button className="mh-btn" onClick={() => setSidebarOpen(!sidebarOpen)}>{I.menu}</button></div>
+    {/* Background pattern for all dashboard pages - dark icons on cream bg */}
+    <div style={{position:'fixed',inset:0,opacity:0.03,pointerEvents:'none',zIndex:0}}>
+      <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <pattern id="dashboard-pattern" x="0" y="0" width="120" height="120" patternUnits="userSpaceOnUse">
+            {/* Stall/canopy icon */}
+            <path d="M20 25l-8-10h16l-8 10z" fill="#5C3A1F"/>
+            <rect x="14" y="25" width="12" height="15" fill="#5C3A1F" opacity="0.7"/>
+            
+            {/* Box icon */}
+            <rect x="70" y="15" width="18" height="16" stroke="#5C3A1F" strokeWidth="1.8" fill="none"/>
+            <path d="M70 15l3-5h12l3 5" stroke="#5C3A1F" strokeWidth="1.8" fill="none"/>
+            
+            {/* Shopping bag */}
+            <path d="M25 65h14v18h-14z" stroke="#5C3A1F" strokeWidth="1.8" fill="none"/>
+            <path d="M27 65v-3a4 4 0 018 0v3" stroke="#5C3A1F" strokeWidth="1.8" fill="none"/>
+            
+            {/* Product/package */}
+            <circle cx="82" cy="75" r="8" stroke="#5C3A1F" strokeWidth="1.8" fill="none"/>
+            <path d="M76 75h12M82 69v12" stroke="#5C3A1F" strokeWidth="1.8"/>
+          </pattern>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#dashboard-pattern)"/>
+      </svg>
+    </div>
+    
+    <div className="mh-bar"><StallLogo w={90} color="#FAF7F3" /><button className="mh-btn" onClick={() => setSidebarOpen(!sidebarOpen)}>{I.menu}</button></div>
     <div className={`sb-ov ${sidebarOpen ? "open" : ""}`} onClick={() => setSidebarOpen(false)} />
     <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
-      <div className="sb-brand"><OjaLogoSm /></div>
+      <div className="sb-brand"><StallLogo w={100} color="#FAF7F3" /></div>
       <nav>{NAV.map(n => <button key={n.id} className={`ni ${page === n.id ? "act" : ""}`} onClick={() => { setPage(n.id); setSidebarOpen(false); setSearch(""); }}>{n.icon}{n.label}{n.badge && <span className={`nb ${n.urgent ? "nb-urgent" : ""}`}>{n.badge}</span>}</button>)}</nav>
       <div className="sf"><div className="sft">{profile.business_name}</div><button className="sf-logout" onClick={() => setBugOpen(true)} style={{ marginBottom: 4 }}>{I.flag} Report a problem</button><button className="sf-logout" onClick={logout}>{I.logout} Sign out</button></div>
     </aside>

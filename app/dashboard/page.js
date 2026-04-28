@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
-import { CSS } from "../../lib/styles";
+import "../app.css";
 import { Onboarding, Dashboard } from "../oja";
 
 export default function DashboardPage() {
@@ -39,10 +39,10 @@ export default function DashboardPage() {
     })();
   }, [session]);
 
-  if (loading) return <><style>{CSS}</style><div className="loading-screen"><div className="spinner" /></div></>;
-  if (!session) return <><style>{CSS}</style><div className="loading-screen"><div className="spinner" /></div></>;
+  if (loading) return <div className="loading-screen"><div className="spinner" /></div>;
+  if (!session) return <div className="loading-screen"><div className="spinner" /></div>;
   if (!profile || !profile.business_name || profile.business_name === "My Business") {
-    return <><style>{CSS}</style><Onboarding session={session} onComplete={setProfile} /></>;
+    return <Onboarding session={session} onComplete={setProfile} />;
   }
-  return <><style>{CSS}</style><Dashboard session={session} profile={profile} onProfile={setProfile} /></>;
+  return <Dashboard session={session} profile={profile} onProfile={setProfile} />;
 }

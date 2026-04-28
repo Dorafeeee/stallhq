@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { supabase } from "../../lib/supabase";
-import { ADMIN_CSS } from "../../lib/admin-styles";
+import "./admin.css";
 import { fmt, fmtDate } from "../../lib/utils";
 import { I } from "../../lib/icons";
 
@@ -38,12 +38,12 @@ export default function Admin() {
     })();
   }, [session]);
 
-  if (loading) return <><style>{ADMIN_CSS}</style><div className="admin-root"><div className="a-loading"><div className="a-spinner" /></div></div></>;
+  if (loading) return <div className="admin-root"><div className="a-loading"><div className="a-spinner" /></div></div>;
 
-  if (!session || !profile) return <><style>{ADMIN_CSS}</style><div className="admin-root"><AdminLogin /></div></>;
-  if (!profile.is_admin) return <><style>{ADMIN_CSS}</style><div className="admin-root"><NotAuthorized email={session.user.email} /></div></>;
+  if (!session || !profile) return <div className="admin-root"><AdminLogin /></div>;
+  if (!profile.is_admin) return <div className="admin-root"><NotAuthorized email={session.user.email} /></div>;
 
-  return <><style>{ADMIN_CSS}</style><div className="admin-root"><AdminShell session={session} profile={profile} /></div></>;
+  return <div className="admin-root"><AdminShell session={session} profile={profile} /></div>;
 }
 
 function AdminLogin() {

@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { supabase } from "../../../lib/supabase";
-import { CSS } from "../../../lib/styles";
+import "../../app.css";
 import { I, OjaLogo } from "../../../lib/icons";
 import { fmt, genToken } from "../../../lib/utils";
 import { BugReportModal } from "../../oja";
@@ -52,10 +52,10 @@ export default function Shop({ slug }) {
     return Math.max(0, item.stock - reserved - inCart);
   };
 
-  if (loading) return <><style>{CSS}</style><div className="loading-screen"><div className="spinner" /></div></>;
-  if (!vendor) return <><style>{CSS}</style><div className="loading-screen"><div style={{ textAlign: "center", color: "var(--t2)" }}><OjaLogo w={60} color="var(--t3)" /><div style={{ marginTop: 20, fontSize: 15 }}>Shop not found</div></div></div></>;
+  if (loading) return <div className="loading-screen"><div className="spinner" /></div>;
+  if (!vendor) return <div className="loading-screen"><div style={{ textAlign: "center", color: "var(--t2)" }}><OjaLogo w={60} color="var(--t3)" /><div style={{ marginTop: 20, fontSize: 15 }}>Shop not found</div></div></div>;
 
-  if (confirmed) return <><style>{CSS}</style><OrderConfirmed order={confirmed} vendor={vendor} /></>;
+  if (confirmed) return <OrderConfirmed order={confirmed} vendor={vendor} />;
 
   const biz = vendor.business_type;
   const hasProducts = items.some(i => i.type === "Product");
@@ -87,7 +87,6 @@ export default function Shop({ slug }) {
   };
 
   return <>
-    <style>{CSS}</style>
     <div className="shop-wrap">
       <div className="shop-header">
         <div className="shop-header-in">
