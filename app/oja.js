@@ -1,9 +1,10 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase";
-import { CSS } from "../lib/styles";
+import "./app.css";
 import { I, OjaLogo, OjaLogoSm, StallMark, StallLogo } from "../lib/icons";
-import { uid, fmt, fmtDate, today, STATUSES, PAY_METHODS, FLOW_LABELS, compressImg, slugify, normalizePhone, genToken } from "../lib/utils";
+import { uid, fmt, fmtDate, today, STATUSES, PAY_METHODS, FLOW_LABELS, compressImg, slugify, normalizePhone, genToken, orderProfit, totalProfit } from "../lib/utils";
+import { IMPORT_SCHEMAS, parseCSV as parseCSVImport, autoMapHeuristic, applyMapping } from "../lib/import-utils";
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -32,10 +33,10 @@ export default function App() {
     })();
   }, [session]);
 
-  if (loading) return <><style>{CSS}</style><div className="loading-screen"><div className="spinner" /></div></>;
-  if (!session) return <><style>{CSS}</style><AuthScreen /></>;
-  if (!profile || !profile.business_name || profile.business_name === "My Business") return <><style>{CSS}</style><Onboarding session={session} onComplete={setProfile} /></>;
-  return <><style>{CSS}</style><Dashboard session={session} profile={profile} onProfile={setProfile} /></>;
+  if (loading) return <div className="loading-screen"><div className="spinner" /></div>;
+  if (!session) return <AuthScreen />;
+  if (!profile || !profile.business_name || profile.business_name === "My Business") return <Onboarding session={session} onComplete={setProfile} />;
+  return <Dashboard session={session} profile={profile} onProfile={setProfile} />;
 }
 
 export function AuthScreen() {
@@ -106,9 +107,11 @@ export function AuthScreen() {
 export function Onboarding({ session, onComplete }) {
   const [step, setStep] = useState(1);
   const [name, setName] = useState(""); const [type, setType] = useState(""); const [phone, setPhone] = useState("");
+  const [profile, setProfile] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [showImport, setShowImport] = useState(false);
 
-  const finish = async () => {
+  const saveProfile = async () => {
     setBusy(true);
     const slug = slugify(name) + "-" + session.user.id.slice(0, 6);
     const { data } = await supabase.from("profiles").upsert({
@@ -116,10 +119,16 @@ export function Onboarding({ session, onComplete }) {
       business_email: session.user.email, slug, accepts_orders: true,
     }).select().single();
     setBusy(false);
-    if (data) { await supabase.from("activity_log").insert({ user_id: session.user.id, action: "onboarded" }); onComplete(data); }
+    if (data) {
+      await supabase.from("activity_log").insert({ user_id: session.user.id, action: "onboarded" });
+      setProfile(data);
+      setStep(4); // go to import step instead of finishing
+    }
   };
 
-  const Dots = ({ n }) => <div style={{display:"flex",gap:6,justifyContent:"center",margin:"22px 0"}}>{[1,2,3].map(i => <div key={i} style={{width: i===n?24:8, height:8, borderRadius: i===n?4:50, background: i===n?"var(--g)":"var(--b)"}}/>)}</div>;
+  const finish = () => { if (profile) onComplete(profile); };
+
+  const Dots = ({ n }) => <div style={{display:"flex",gap:6,justifyContent:"center",margin:"22px 0"}}>{[1,2,3,4].map(i => <div key={i} style={{width: i===n?24:8, height:8, borderRadius: i===n?4:50, background: i===n?"var(--g)":"var(--b)"}}/>)}</div>;
 
   if (step === 1) return <div className="onboard"><div className="ob-card">
     <OjaLogo w={80} color="var(--g)" /><Dots n={1} />
@@ -140,13 +149,25 @@ export function Onboarding({ session, onComplete }) {
     <button className="obb obb-s" onClick={() => setStep(1)}>Back</button>
   </div></div>;
 
-  return <div className="onboard"><div className="ob-card">
+  if (step === 3) return <div className="onboard"><div className="ob-card">
     <OjaLogo w={80} color="var(--g)" /><Dots n={3} />
     <h2>Almost done</h2><p>Your phone number (optional).</p>
     <input className="auth-fi" style={{textAlign:"center",marginBottom:16}} placeholder="08012345678" value={phone} onChange={e => setPhone(e.target.value)} />
-    <button className="obb obb-p" disabled={busy} onClick={finish}>{busy ? "Setting up..." : "Launch Dashboard"} {!busy && I.arr}</button>
+    <button className="obb obb-p" disabled={busy} onClick={saveProfile}>{busy ? "Setting up..." : "Continue"} {!busy && I.arr}</button>
     <button className="obb obb-s" onClick={() => setStep(2)}>Back</button>
   </div></div>;
+
+  // Step 4: Import existing data
+  return <>
+    <div className="onboard"><div className="ob-card">
+      <OjaLogo w={80} color="var(--g)" /><Dots n={4} />
+      <h2>Already tracking with a spreadsheet?</h2>
+      <p>Import your existing products, customers, or sales from Excel or Google Sheets. We'll auto-match the columns. You can do this later if you prefer.</p>
+      <button className="obb obb-p" onClick={() => setShowImport(true)}>Import from spreadsheet {I.arr}</button>
+      <button className="obb obb-s" onClick={finish}>Skip — I'll add things manually</button>
+    </div></div>
+    {showImport && <SmartImport session={session} onClose={() => setShowImport(false)} onComplete={() => { setShowImport(false); finish(); }} />}
+  </>;
 }
 
 export function Dashboard({ session, profile, onProfile }) {
@@ -257,13 +278,353 @@ function Modal({ title, children, onClose, wide }) { return <div className="mo" 
 function ImgUp({ value, onChange }) { const ref = useRef(); return <div className="img-up" onClick={() => ref.current?.click()}><input ref={ref} type="file" accept="image/*" style={{ display: "none" }} onChange={async e => { const f = e.target.files[0]; if (f) onChange(await compressImg(f)); }} />{value ? <><img src={value} alt="" /><button className="rm" onClick={e => { e.stopPropagation(); onChange(""); }}>&times;</button></> : <div className="pht">{I.cam}<span>Add Photo</span></div>}</div>; }
 
 // ══════════════════════════════════════════════════════════════
+// SMART IMPORT (CSV/Excel) — products / customers / orders
+// ══════════════════════════════════════════════════════════════
+export function SmartImport({ session, schemaKey, onClose, onComplete, allowSchemaSwitch = true }) {
+  const [step, setStep] = useState("upload"); // upload | mapping | preview | importing | done
+  const [activeSchema, setActiveSchema] = useState(schemaKey || "products");
+  const [parsed, setParsed] = useState(null); // { headers, rows, fileName }
+  const [mapping, setMapping] = useState({});
+  const [validation, setValidation] = useState(null); // { results, errors }
+  const [importResult, setImportResult] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const fileRef = useRef();
+
+  const schema = IMPORT_SCHEMAS[activeSchema];
+
+  const handleFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setErr("");
+    try {
+      const text = await file.text();
+      const { headers, rows } = parseCSVImport(text);
+      if (!headers.length || !rows.length) {
+        setErr("Couldn't read any data from this file. Make sure the first row has column names.");
+        return;
+      }
+      setParsed({ headers, rows, fileName: file.name });
+
+      // Smart heuristic mapping using sample rows for type-aware matching
+      const mappingResult = autoMapHeuristic(headers, activeSchema, rows.slice(0, 10));
+
+      // Sanity-check mapping keys against schema
+      const safeMapping = {};
+      for (const f of schema.fields) {
+        safeMapping[f.key] = mappingResult[f.key] && headers.includes(mappingResult[f.key]) ? mappingResult[f.key] : null;
+      }
+      setMapping(safeMapping);
+      setStep("mapping");
+    } catch (e) {
+      setErr("Couldn't read this file. Please upload a CSV file.");
+    }
+  };
+
+  const goPreview = () => {
+    const v = applyMapping(parsed.rows, mapping, activeSchema);
+    setValidation(v);
+    setStep("preview");
+  };
+
+  const doImport = async () => {
+    setBusy(true);
+    setStep("importing");
+    const validRows = validation.results.filter((_, i) => !validation.errors.some(e => e.row === i + 2));
+    
+    try {
+      let inserted = 0;
+      let failed = 0;
+      let firstError = null;
+      
+      if (activeSchema === "products") {
+        const payload = validRows.map(r => ({
+          user_id: session.user.id,
+          name: r.name,
+          price: r.price,
+          cost_price: r.cost_price ?? null,
+          supplier: r.supplier || null,
+          stock: r.stock ?? null,
+          description: r.description || null,
+          type: "Product",
+        }));
+        // Insert in batches of 50
+        for (let i = 0; i < payload.length; i += 50) {
+          const batch = payload.slice(i, i + 50);
+          const { error } = await supabase.from("items").insert(batch);
+          if (error) { failed += batch.length; if (!firstError) firstError = error.message; }
+          else inserted += batch.length;
+        }
+      } else if (activeSchema === "customers") {
+        const payload = validRows.map(r => ({
+          user_id: session.user.id,
+          name: r.name,
+          phone: r.phone ? normalizePhone(r.phone) : null,
+          email: r.email || null,
+          address: r.address || null,
+          notes: r.notes || null,
+        }));
+        for (let i = 0; i < payload.length; i += 50) {
+          const batch = payload.slice(i, i + 50);
+          const { error } = await supabase.from("customers").insert(batch);
+          if (error) { failed += batch.length; if (!firstError) firstError = error.message; }
+          else inserted += batch.length;
+        }
+      } else if (activeSchema === "orders") {
+        // For orders, we need to upsert customers first by name+phone
+        for (const r of validRows) {
+          let customer_id = null;
+          if (r.customer_name) {
+            const phone = r.phone ? normalizePhone(r.phone) : null;
+            // Find or create customer
+            let { data: existing } = await supabase.from("customers").select("id").eq("user_id", session.user.id).eq("name", r.customer_name).maybeSingle();
+            if (!existing) {
+              const { data: newCust } = await supabase.from("customers").insert({
+                user_id: session.user.id,
+                name: r.customer_name,
+                phone,
+              }).select().single();
+              if (newCust) customer_id = newCust.id;
+            } else {
+              customer_id = existing.id;
+            }
+          }
+          const { error } = await supabase.from("orders").insert({
+            user_id: session.user.id,
+            customer_id,
+            customer_name: r.customer_name,
+            item_name: r.item,
+            total: r.amount,
+            date: r.date || today(),
+            status: r.status || "Completed",
+            notes: r.notes || null,
+            flow_status: "active",
+            source: "import",
+          });
+          if (error) { failed += 1; if (!firstError) firstError = error.message; }
+          else inserted += 1;
+        }
+      }
+      
+      setImportResult({ inserted, failed, skipped: validation.errors.length, firstError });
+      setStep("done");
+    } catch (e) {
+      setErr(e.message || "Something went wrong during import");
+      setStep("preview");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reset = () => {
+    setStep("upload");
+    setParsed(null);
+    setMapping({});
+    setValidation(null);
+    setImportResult(null);
+    setErr("");
+  };
+
+  const requiredOk = schema.fields.filter(f => f.required).every(f => mapping[f.key]);
+  const validCount = validation ? validation.results.length - validation.errors.length : 0;
+
+  return <Modal title="Import from spreadsheet" onClose={onClose} wide>
+    <div className="mb">
+      {/* Schema picker */}
+      {step === "upload" && allowSchemaSwitch && (
+        <div style={{ marginBottom: 18 }}>
+          <div className="fl">What are you importing?</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+            {Object.entries(IMPORT_SCHEMAS).map(([key, s]) => (
+              <button key={key} className={`tc ${activeSchema === key ? "sel" : ""}`} onClick={() => setActiveSchema(key)} style={{ padding: "12px 8px" }}>
+                <div className="tcl">{s.label}</div>
+                <div className="tcd">{s.description}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* STEP: Upload */}
+      {step === "upload" && (
+        <div>
+          <div style={{ background: "var(--gl)", border: "1px solid var(--g)", borderRadius: 10, padding: 14, fontSize: 13, marginBottom: 16, color: "var(--t)" }}>
+            <div style={{ fontWeight: 700, marginBottom: 4, color: "var(--g)" }}>How this works</div>
+            Upload a CSV from Excel or Google Sheets. We'll automatically figure out which columns match {schema.label.toLowerCase()}. You'll review before anything is saved.
+          </div>
+          <input ref={fileRef} type="file" accept=".csv,text/csv" style={{ display: "none" }} onChange={handleFile} />
+          <button className="big-btn" onClick={() => fileRef.current?.click()} style={{ background: "var(--g)" }}>
+            Choose CSV file
+          </button>
+          <div style={{ fontSize: 12, color: "var(--t3)", marginTop: 10, textAlign: "center" }}>
+            From Excel: File → Save As → CSV. From Google Sheets: File → Download → CSV.
+          </div>
+          {err && <div className="auth-err" style={{ marginTop: 12 }}>{err}</div>}
+        </div>
+      )}
+
+      {/* STEP: Mapping */}
+      {step === "mapping" && parsed && (
+        <div>
+          <div style={{ fontSize: 13, color: "var(--t2)", marginBottom: 12 }}>
+            <b>{parsed.fileName}</b> — {parsed.rows.length} rows, {parsed.headers.length} columns
+          </div>
+          <div style={{ fontSize: 12, color: "var(--t3)", marginBottom: 14 }}>
+            We've auto-matched your columns. Adjust any that don't look right.
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
+            {schema.fields.map(f => (
+              <div key={f.key} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, alignItems: "center" }}>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>
+                  {f.label}
+                  {f.required && <span style={{ color: "var(--r)", marginLeft: 4 }}>*</span>}
+                </div>
+                <select className="fs" value={mapping[f.key] || ""} onChange={e => setMapping({ ...mapping, [f.key]: e.target.value || null })}>
+                  <option value="">— Skip this field —</option>
+                  {parsed.headers.map(h => <option key={h} value={h}>{h}</option>)}
+                </select>
+              </div>
+            ))}
+          </div>
+          {!requiredOk && <div className="auth-err" style={{ marginBottom: 12 }}>Please match all required fields (marked with *)</div>}
+        </div>
+      )}
+
+      {/* STEP: Preview */}
+      {step === "preview" && validation && (
+        <div>
+          <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+            <div style={{ flex: 1, minWidth: 120, background: "var(--gl)", padding: 12, borderRadius: 8 }}>
+              <div className="sl" style={{ color: "var(--g)" }}>Will import</div>
+              <div className="sv" style={{ color: "var(--g)", fontSize: 18 }}>{validCount}</div>
+            </div>
+            {validation.errors.length > 0 && (
+              <div style={{ flex: 1, minWidth: 120, background: "var(--aml)", padding: 12, borderRadius: 8 }}>
+                <div className="sl" style={{ color: "var(--am)" }}>Skipped</div>
+                <div className="sv" style={{ color: "var(--am)", fontSize: 18 }}>{validation.errors.length}</div>
+              </div>
+            )}
+          </div>
+
+          <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".5px", color: "var(--t3)", marginBottom: 8 }}>Preview (first 5)</div>
+          <div style={{ overflowX: "auto", border: "1px solid var(--bl)", borderRadius: 8, marginBottom: 14 }}>
+            <table style={{ fontSize: 12, minWidth: "100%" }}>
+              <thead>
+                <tr>
+                  {schema.fields.filter(f => mapping[f.key]).map(f => (
+                    <th key={f.key} style={{ padding: 8, background: "var(--bg)" }}>{f.label}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {validation.results.slice(0, 5).map((r, i) => (
+                  <tr key={i}>
+                    {schema.fields.filter(f => mapping[f.key]).map(f => (
+                      <td key={f.key} style={{ padding: 8 }}>{r[f.key] ?? <span style={{ color: "var(--t3)" }}>—</span>}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {validation.errors.length > 0 && (
+            <details style={{ marginBottom: 12 }}>
+              <summary style={{ cursor: "pointer", fontSize: 12, color: "var(--t2)" }}>{validation.errors.length} rows have problems and will be skipped</summary>
+              <div style={{ marginTop: 8, fontSize: 11, color: "var(--t3)", maxHeight: 120, overflow: "auto" }}>
+                {validation.errors.slice(0, 20).map((e, i) => (
+                  <div key={i}>Row {e.row}: {e.issues.join(", ")}</div>
+                ))}
+                {validation.errors.length > 20 && <div>… and {validation.errors.length - 20} more</div>}
+              </div>
+            </details>
+          )}
+          {err && <div className="auth-err" style={{ marginBottom: 12 }}>{err}</div>}
+        </div>
+      )}
+
+      {/* STEP: Importing */}
+      {step === "importing" && (
+        <div style={{ textAlign: "center", padding: "40px 20px" }}>
+          <div className="spinner" style={{ margin: "0 auto 16px" }} />
+          <div style={{ fontSize: 14, color: "var(--t2)" }}>Importing your data…</div>
+        </div>
+      )}
+
+      {/* STEP: Done */}
+      {step === "done" && importResult && (
+        <div style={{ textAlign: "center", padding: "20px" }}>
+          <div style={{ fontSize: 36, marginBottom: 8 }}>{importResult.failed > 0 && importResult.inserted === 0 ? "⚠" : "✓"}</div>
+          <div style={{ fontFamily: "var(--fm)", fontSize: 18, fontWeight: 700, marginBottom: 6 }}>{importResult.failed > 0 && importResult.inserted === 0 ? "Import failed" : "Import complete"}</div>
+          <div style={{ fontSize: 14, color: "var(--t2)", marginBottom: 16 }}>
+            {importResult.inserted} {schema.label.toLowerCase()} imported
+            {importResult.failed > 0 && <span style={{ color: "var(--r)" }}>, {importResult.failed} failed</span>}
+            {importResult.skipped > 0 && <span style={{ color: "var(--am)" }}>, {importResult.skipped} skipped</span>}
+          </div>
+          {importResult.firstError && (
+            <div style={{ background: "var(--rl)", color: "var(--r)", padding: "10px 12px", borderRadius: 8, fontSize: 12, textAlign: "left", marginBottom: 12 }}>
+              <div style={{ fontWeight: 700, marginBottom: 4 }}>Error details:</div>
+              <div style={{ fontFamily: "var(--fm)", fontSize: 11.5, wordBreak: "break-word" }}>{importResult.firstError}</div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+
+    <div className="mf">
+      {step === "upload" && <button className="btn btn-s" onClick={onClose}>Cancel</button>}
+      {step === "mapping" && (
+        <>
+          <button className="btn btn-s" onClick={reset}>Back</button>
+          <button className="btn btn-p" disabled={!requiredOk} onClick={goPreview}>Preview →</button>
+        </>
+      )}
+      {step === "preview" && (
+        <>
+          <button className="btn btn-s" onClick={() => setStep("mapping")}>Back</button>
+          <button className="btn btn-p" disabled={validCount === 0 || busy} onClick={doImport}>Import {validCount}</button>
+        </>
+      )}
+      {step === "done" && (
+        <>
+          <button className="btn btn-s" onClick={reset}>Import another</button>
+          <button className="btn btn-p" onClick={() => { onComplete?.(importResult); onClose(); }}>Done</button>
+        </>
+      )}
+    </div>
+  </Modal>;
+}
+
+
+// ══════════════════════════════════════════════════════════════
 // DASHBOARD
 // ══════════════════════════════════════════════════════════════
 function DashPage({ profile, orders, customers, items, invoices, paidAmount, goTo, catL, ordL }) {
   const active = orders.filter(o => o.status === "Pending" || o.status === "In Progress");
-  const totalPaid = orders.filter(o => o.status !== "Cancelled").reduce((s, o) => s + paidAmount(o.id), 0);
-  const totalOwed = orders.filter(o => o.status !== "Cancelled").reduce((s, o) => s + Math.max(0, Number(o.total || 0) - paidAmount(o.id)), 0);
+  const validOrders = orders.filter(o => o.status !== "Cancelled");
+  const totalPaid = validOrders.reduce((s, o) => s + paidAmount(o.id), 0);
+  const totalOwed = validOrders.reduce((s, o) => s + Math.max(0, Number(o.total || 0) - paidAmount(o.id)), 0);
   const urgent = orders.filter(o => o.flow_status === "awaiting_pricing" || o.flow_status === "payment_claimed");
+
+  // Profit calc - based on completed/in-progress orders that have a cost snapshot
+  const profitableOrders = validOrders.filter(o => o.cost_at_sale != null || (o.item_id && items.find(i => i.id === o.item_id)?.cost_price));
+  const profit = totalProfit(profitableOrders, items);
+  const profitableRevenue = profitableOrders.reduce((s, o) => s + Number(o.total || 0), 0);
+  const marginPct = profitableRevenue > 0 ? Math.round((profit / profitableRevenue) * 100) : null;
+
+  // Top profitable products: aggregate profit per item across all valid orders
+  const profitByItem = {};
+  for (const o of validOrders) {
+    if (!o.item_id) continue;
+    const p = orderProfit(o, items);
+    if (p === 0) continue;
+    if (!profitByItem[o.item_id]) profitByItem[o.item_id] = { id: o.item_id, name: o.item_name, profit: 0, sales: 0 };
+    profitByItem[o.item_id].profit += p;
+    profitByItem[o.item_id].sales += 1;
+  }
+  const topProducts = Object.values(profitByItem).sort((a, b) => b.profit - a.profit).slice(0, 5);
+  const hasCostData = items.some(i => i.cost_price);
+
   const l7 = Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (6 - i)); const k = d.toISOString().slice(0, 10); return { label: d.toLocaleDateString("en-NG", { weekday: "short" }), rev: orders.filter(o => o.date === k && o.status !== "Cancelled").reduce((s, o) => s + paidAmount(o.id), 0), k }; });
   const mx = Math.max(...l7.map(d => d.rev), 1);
   const recent = [...orders].slice(0, 5);
@@ -277,15 +638,44 @@ function DashPage({ profile, orders, customers, items, invoices, paidAmount, goT
       </div>
     </div>}
     <div className="cg">
-      <div className="card sc"><div className="si" style={{ background: "var(--gl)", color: "var(--g)" }}>{"\u20A6"}</div><div className="sl">Received</div><div className="sv">{fmt(totalPaid)}</div></div>
+      <div className="card sc"><div className="si" style={{ background: "var(--gl)", color: "var(--g)" }}>{"\u20A6"}</div><div className="sl">Revenue</div><div className="sv">{fmt(totalPaid)}</div></div>
+      <div className="card sc">
+        <div className="si" style={{ background: profit > 0 ? "var(--bll)" : "var(--sh)", color: profit > 0 ? "var(--bl2)" : "var(--t3)" }}>{"\u2197"}</div>
+        <div className="sl">Profit</div>
+        <div className="sv" style={{ color: profit > 0 ? "var(--g)" : profit < 0 ? "var(--r)" : "var(--t2)" }}>{hasCostData ? fmt(profit) : "—"}</div>
+        {marginPct !== null && hasCostData && <div style={{ fontSize: 11, color: "var(--t3)", fontFamily: "var(--fm)", marginTop: 2 }}>{marginPct}% margin</div>}
+      </div>
       <div className="card sc"><div className="si" style={{ background: "var(--aml)", color: "var(--am)" }}>!</div><div className="sl">Outstanding</div><div className="sv">{fmt(totalOwed)}</div></div>
-      <div className="card sc"><div className="si" style={{ background: "var(--bll)", color: "var(--bl2)" }}>#</div><div className="sl">Active</div><div className="sv">{active.length}</div></div>
       <div className="card sc"><div className="si" style={{ background: "var(--pl)", color: "var(--p)" }}>{I.customers}</div><div className="sl">Customers</div><div className="sv">{customers.length}</div></div>
     </div>
+    {!hasCostData && <div className="card" style={{ marginBottom: 20, background: "var(--bll)", border: "1px solid #c5d6f5", cursor: "pointer" }} onClick={() => goTo("catalog")}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 200 }}><div style={{ fontWeight: 700, fontSize: 13, color: "var(--bl2)", marginBottom: 2 }}>Track profit, not just sales</div><div style={{ fontSize: 12, color: "var(--t2)" }}>Add cost prices to your products to see how much you actually make</div></div>
+        <button className="btn btn-p btn-sm">Add cost prices</button>
+      </div>
+    </div>}
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 24 }}>
       <div className="card" style={{ minWidth: 0 }}><div style={{ fontWeight: 600, fontSize: 12.5, marginBottom: 14 }}>Revenue (7 days)</div><div className="bar-chart">{l7.map(d => <div className="bar-col" key={d.k}><div className="bar" style={{ height: `${(d.rev / mx) * 100}%`, background: d.rev > 0 ? "var(--g)" : "var(--b)" }} /><div className="bar-label">{d.label}</div></div>)}</div></div>
       <div className="card" style={{ minWidth: 0 }}><div style={{ fontWeight: 600, fontSize: 12.5, marginBottom: 14 }}>Snapshot</div>{[[catL, items.length], ["Completed", orders.filter(o => o.status === "Completed").length], ["Invoices", invoices.length]].map(([l, v]) => <div key={l} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "6px 0" }}><span style={{ color: "var(--t2)" }}>{l}</span><span style={{ fontWeight: 600 }}>{v}</span></div>)}</div>
     </div>
+    {topProducts.length > 0 && <div className="card" style={{ marginBottom: 24 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <div style={{ fontWeight: 600, fontSize: 12.5 }}>Top profitable products</div>
+        <button className="btn btn-g btn-sm" onClick={() => goTo("catalog")}>See all</button>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {topProducts.map((p, i) => (
+          <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 0", borderBottom: i < topProducts.length - 1 ? "1px solid var(--bl)" : "none" }}>
+            <div style={{ width: 22, height: 22, borderRadius: 11, background: i === 0 ? "var(--gl)" : "var(--sh)", color: i === 0 ? "var(--g)" : "var(--t2)", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{i + 1}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
+              <div style={{ fontSize: 11, color: "var(--t3)" }}>{p.sales} sale{p.sales !== 1 ? "s" : ""}</div>
+            </div>
+            <div style={{ fontFamily: "var(--fm)", fontWeight: 700, color: "var(--g)", fontSize: 13 }}>{fmt(p.profit)}</div>
+          </div>
+        ))}
+      </div>
+    </div>}
     <div className="card">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}><div style={{ fontWeight: 600, fontSize: 12.5 }}>Recent {ordL}</div>{orders.length > 5 && <button className="btn btn-g btn-sm" onClick={() => goTo("orders")}>View all</button>}</div>
       {recent.length === 0 ? <div className="empty"><p>No {ordL.toLowerCase()} yet.</p></div> : <div className="tw"><table><thead><tr><th>Customer</th><th>Item</th><th>Total</th><th>Status</th></tr></thead><tbody>{recent.map(o => <tr key={o.id}><td style={{ fontWeight: 500 }}>{o.customer_name || "Walk-in"}</td><td>{o.item_name}</td><td>{fmt(o.total)}</td><td><span className={`badge ${flowBadge(o)}`}>{flowLabel(o)}</span></td></tr>)}</tbody></table></div>}
@@ -317,19 +707,19 @@ function CatPage({ session, items, setItems, modal, setModal, search, setSearch,
   const dt = biz === "products" ? "Product" : biz === "services" ? "Service" : "Product";
   const filtered = items.filter(i => tab === "All" || i.type === tab).filter(i => i.name.toLowerCase().includes(search.toLowerCase()));
   const save = async (item) => {
-    if (item.id) { const { data } = await supabase.from("items").update({ type: item.type, name: item.name, price: item.price, description: item.description, stock: item.stock, image: item.image }).eq("id", item.id).select().single(); if (data) setItems(items.map(i => i.id === data.id ? data : i)); }
-    else { const { data } = await supabase.from("items").insert({ user_id: session.user.id, type: item.type, name: item.name, price: item.price, description: item.description, stock: item.stock, image: item.image }).select().single(); if (data) setItems([data, ...items]); }
+    if (item.id) { const { data } = await supabase.from("items").update({ type: item.type, name: item.name, price: item.price, cost_price: item.cost_price, supplier: item.supplier, description: item.description, stock: item.stock, image: item.image }).eq("id", item.id).select().single(); if (data) setItems(items.map(i => i.id === data.id ? data : i)); }
+    else { const { data } = await supabase.from("items").insert({ user_id: session.user.id, type: item.type, name: item.name, price: item.price, cost_price: item.cost_price, supplier: item.supplier, description: item.description, stock: item.stock, image: item.image }).select().single(); if (data) setItems([data, ...items]); }
     setModal(null);
   };
   const del = async (id) => { await supabase.from("items").delete().eq("id", id); setItems(items.filter(i => i.id !== id)); };
   return <div>
-    <div className="ph"><div><div className="pt">{catL}</div><div className="ps">{items.length} item{items.length !== 1 ? "s" : ""}</div></div><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><button className="btn btn-s" onClick={() => setModal({ t: "bulk", d: null })}>Bulk upload</button><button className="btn btn-p" onClick={() => setModal({ t: "item", d: { type: dt, name: "", price: "", description: "", stock: "", image: "" } })}>{I.plus} Add</button></div></div>
+    <div className="ph"><div><div className="pt">{catL}</div><div className="ps">{items.length} item{items.length !== 1 ? "s" : ""}</div></div><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><button className="btn btn-s" onClick={() => setModal({ t: "import" })}>Import CSV</button><button className="btn btn-s" onClick={() => setModal({ t: "bulk", d: null })}>Bulk upload</button><button className="btn btn-p" onClick={() => setModal({ t: "item", d: { type: dt, name: "", price: "", cost_price: "", supplier: "", description: "", stock: "", image: "" } })}>{I.plus} Add</button></div></div>
     <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 18, flexWrap: "wrap" }}>
       {biz === "both" && <div className="tabs" style={{ marginBottom: 0, borderBottom: "none" }}>{["All", "Product", "Service"].map(t => <button key={t} className={`tab ${tab === t ? "active" : ""}`} onClick={() => setTab(t)}>{t === "All" ? "All" : t + "s"}</button>)}</div>}
       <div className="sb-w" style={{ marginLeft: "auto" }}><span className="ic">{I.search}</span><input placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)} /></div>
     </div>
     {filtered.length === 0 ? <div className="card"><div className="empty"><p>No items yet.</p></div></div> : <>
-      <div className="card" style={{ padding: 0 }}><div className="tw"><table><thead><tr><th style={{ width: 48 }}></th><th>Name</th>{biz === "both" && <th>Type</th>}<th>Price</th>{showP && <th>Stock</th>}<th style={{ width: 70 }}></th></tr></thead><tbody>{filtered.map(item => <tr key={item.id}><td>{item.image ? <img className="ith" src={item.image} alt="" /> : <div className="ith" style={{ display: "flex", alignItems: "center", justifyContent: "center", color: "var(--t3)" }}>{I.cam}</div>}</td><td style={{ fontWeight: 500 }}>{item.name}{item.description && <div style={{ fontSize: 10.5, color: "var(--t3)", marginTop: 1 }}>{item.description.slice(0, 45)}</div>}</td>{biz === "both" && <td><span className={`badge ${item.type === "Product" ? "bg-b" : "bg-p"}`}>{item.type}</span></td>}<td>{item.price ? fmt(item.price) : <span style={{ color: "var(--t3)" }}>Varies</span>}</td>{showP && <td>{item.type === "Product" ? (item.stock ?? "\u2014") : "\u2014"}</td>}<td><div className="ar"><button className="ab" onClick={() => setModal({ t: "item", d: { ...item } })}>{I.edit}</button><button className="ab dng" onClick={() => del(item.id)}>{I.trash}</button></div></td></tr>)}</tbody></table></div></div>
+      <div className="card" style={{ padding: 0 }}><div className="tw"><table><thead><tr><th style={{ width: 48 }}></th><th>Name</th>{biz === "both" && <th>Type</th>}<th>Price</th><th>Cost</th><th>Margin</th>{showP && <th>Stock</th>}<th style={{ width: 70 }}></th></tr></thead><tbody>{filtered.map(item => { const margin = item.price && item.cost_price ? Math.round(((item.price - item.cost_price) / item.price) * 100) : null; return <tr key={item.id}><td>{item.image ? <img className="ith" src={item.image} alt="" /> : <div className="ith" style={{ display: "flex", alignItems: "center", justifyContent: "center", color: "var(--t3)" }}>{I.cam}</div>}</td><td style={{ fontWeight: 500 }}>{item.name}{item.supplier && <div style={{ fontSize: 10.5, color: "var(--t3)", marginTop: 1 }}>via {item.supplier}</div>}</td>{biz === "both" && <td><span className={`badge ${item.type === "Product" ? "bg-b" : "bg-p"}`}>{item.type}</span></td>}<td>{item.price ? fmt(item.price) : <span style={{ color: "var(--t3)" }}>Varies</span>}</td><td style={{ color: "var(--t2)" }}>{item.cost_price ? fmt(item.cost_price) : <span style={{ color: "var(--t3)" }}>—</span>}</td><td>{margin !== null ? <span style={{ fontWeight: 600, color: margin > 0 ? "var(--g)" : "var(--r)" }}>{margin}%</span> : <span style={{ color: "var(--t3)" }}>—</span>}</td>{showP && <td>{item.type === "Product" ? (item.stock ?? "\u2014") : "\u2014"}</td>}<td><div className="ar"><button className="ab" onClick={() => setModal({ t: "item", d: { ...item } })}>{I.edit}</button><button className="ab dng" onClick={() => del(item.id)}>{I.trash}</button></div></td></tr>; })}</tbody></table></div></div>
       <div className="mcards">{filtered.map(item => <div key={item.id} className="mcard">
         <div className="mcard-top">
           <div className="mcard-tl">
@@ -343,6 +733,8 @@ function CatPage({ session, items, setItems, modal, setModal, search, setSearch,
         </div>
         <div className="mcard-stats">
           <div className="mcard-stat"><span className="k">Price</span><span className="v">{item.price ? fmt(item.price) : "Varies"}</span></div>
+          {item.cost_price && <div className="mcard-stat"><span className="k">Cost</span><span className="v">{fmt(item.cost_price)}</span></div>}
+          {item.price && item.cost_price && <div className="mcard-stat"><span className="k">Margin</span><span className="v pos">{Math.round(((item.price - item.cost_price) / item.price) * 100)}%</span></div>}
           {showP && item.type === "Product" && <div className="mcard-stat"><span className="k">Stock</span><span className="v">{item.stock ?? "\u2014"}</span></div>}
         </div>
         <div className="mcard-actions">
@@ -353,11 +745,51 @@ function CatPage({ session, items, setItems, modal, setModal, search, setSearch,
     </>}
     {modal?.t === "item" && <Modal title={modal.d.id ? "Edit Item" : "Add Item"} onClose={() => setModal(null)}><ItemForm d={modal.d} save={save} cancel={() => setModal(null)} biz={biz} /></Modal>}
     {modal?.t === "bulk" && <Modal title="Bulk Upload Items" onClose={() => setModal(null)} wide><BulkUpload session={session} biz={biz} items={items} setItems={setItems} close={() => setModal(null)} /></Modal>}
+    {modal?.t === "import" && <SmartImport session={session} schemaKey="products" allowSchemaSwitch={false} onClose={() => setModal(null)} onComplete={async () => { const { data } = await supabase.from("items").select("*").eq("user_id", session.user.id).order("created_at", { ascending: false }); if (data) setItems(data); }} />}
   </div>;
 }
 function ItemForm({ d, save, cancel, biz }) {
-  const [f, sf] = useState(d); const set = (k, v) => sf(p => ({ ...p, [k]: v })); const [busy, setBusy] = useState(false);
-  return <div><div className="mb"><div className="fg"><label className="fl">Photo</label><ImgUp value={f.image} onChange={v => set("image", v)} /></div><div className="fr">{biz === "both" && <div className="fg"><label className="fl">Type</label><select className="fs" value={f.type} onChange={e => set("type", e.target.value)}><option>Product</option><option>Service</option></select></div>}<div className="fg"><label className="fl">Price (NGN)</label><input className="fi" type="number" placeholder="Empty = varies" value={f.price || ""} onChange={e => set("price", e.target.value)} /></div></div><div className="fg"><label className="fl">Name</label><input className="fi" placeholder={f.type === "Service" ? "e.g. Bridal Makeup" : "e.g. Ankara Fabric"} value={f.name} onChange={e => set("name", e.target.value)} /></div>{f.type === "Product" && <div className="fg"><label className="fl">Stock</label><input className="fi" type="number" placeholder="Optional" value={f.stock || ""} onChange={e => set("stock", e.target.value)} /></div>}<div className="fg"><label className="fl">Description</label><textarea className="ft" placeholder="Brief description..." value={f.description || ""} onChange={e => set("description", e.target.value)} /></div></div><div className="mf"><button className="btn btn-s" onClick={cancel}>Cancel</button><button className="btn btn-p" disabled={!f.name.trim() || busy} onClick={async () => { setBusy(true); await save({ ...f, price: f.price ? Number(f.price) : null, stock: f.stock ? Number(f.stock) : null }); setBusy(false); }}>{busy ? "Saving..." : "Save"}</button></div></div>;
+  const [f, sf] = useState(d);
+  const set = (k, v) => sf(p => ({ ...p, [k]: v }));
+  const [busy, setBusy] = useState(false);
+
+  const price = Number(f.price) || 0;
+  const cost = Number(f.cost_price) || 0;
+  const profit = price && cost ? price - cost : 0;
+  const margin = price && cost ? Math.round((profit / price) * 100) : 0;
+
+  return <div>
+    <div className="mb">
+      <div className="fg"><label className="fl">Photo</label><ImgUp value={f.image} onChange={v => set("image", v)} /></div>
+      <div className="fr">
+        {biz === "both" && <div className="fg"><label className="fl">Type</label><select className="fs" value={f.type} onChange={e => set("type", e.target.value)}><option>Product</option><option>Service</option></select></div>}
+        <div className="fg"><label className="fl">Selling price (NGN)</label><input className="fi" type="number" placeholder="Empty = varies" value={f.price || ""} onChange={e => set("price", e.target.value)} /></div>
+      </div>
+      <div className="fg"><label className="fl">Name</label><input className="fi" placeholder={f.type === "Service" ? "e.g. Bridal Makeup" : "e.g. Ankara Fabric"} value={f.name} onChange={e => set("name", e.target.value)} /></div>
+      <div className="fr">
+        <div className="fg"><label className="fl">Cost price (NGN)</label><input className="fi" type="number" placeholder="What you paid" value={f.cost_price || ""} onChange={e => set("cost_price", e.target.value)} /></div>
+        <div className="fg"><label className="fl">Supplier</label><input className="fi" placeholder="Optional — e.g. Balogun Market" value={f.supplier || ""} onChange={e => set("supplier", e.target.value)} /></div>
+      </div>
+      {price > 0 && cost > 0 && (
+        <div style={{ background: profit > 0 ? "var(--gl)" : "var(--rl)", padding: "10px 12px", borderRadius: 8, fontSize: 12.5, marginBottom: 14, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+          <span style={{ color: "var(--t2)", fontWeight: 600 }}>Profit per unit</span>
+          <span style={{ fontFamily: "var(--fm)", fontWeight: 700, color: profit > 0 ? "var(--g)" : "var(--r)" }}>
+            {fmt(profit)} <span style={{ fontSize: 11, opacity: 0.8 }}>({margin}% margin)</span>
+          </span>
+        </div>
+      )}
+      {f.type === "Product" && <div className="fg"><label className="fl">Stock</label><input className="fi" type="number" placeholder="Optional" value={f.stock || ""} onChange={e => set("stock", e.target.value)} /></div>}
+      <div className="fg"><label className="fl">Description</label><textarea className="ft" placeholder="Brief description..." value={f.description || ""} onChange={e => set("description", e.target.value)} /></div>
+    </div>
+    <div className="mf">
+      <button className="btn btn-s" onClick={cancel}>Cancel</button>
+      <button className="btn btn-p" disabled={!f.name.trim() || busy} onClick={async () => {
+        setBusy(true);
+        await save({ ...f, price: f.price ? Number(f.price) : null, cost_price: f.cost_price ? Number(f.cost_price) : null, supplier: f.supplier?.trim() || null, stock: f.stock ? Number(f.stock) : null });
+        setBusy(false);
+      }}>{busy ? "Saving..." : "Save"}</button>
+    </div>
+  </div>;
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -395,10 +827,10 @@ function BulkUpload({ session, biz, items, setItems, close }) {
   const downloadTemplate = () => {
     const defaultType = biz === "services" ? "Service" : "Product";
     const csv = [
-      "name,type,price,stock,description",
-      biz === "services" ? "Bridal Makeup,Service,80000,,Includes trial session" : "Banana Bread,Product,10000,15,Fresh baked daily",
-      biz === "services" ? "Party Makeup,Service,35000,,Onsite or studio" : "Coconut Cookies,Product,5000,30,Pack of 12",
-      biz === "both" ? "Studio Booking,Service,15000,,Per hour" : `Sample Item,${defaultType},12000,,Short description here`,
+      "name,type,price,cost_price,supplier,stock,description",
+      biz === "services" ? "Bridal Makeup,Service,80000,,,,Includes trial session" : "Banana Bread,Product,10000,4500,Local Bakery,15,Fresh baked daily",
+      biz === "services" ? "Party Makeup,Service,35000,,,,Onsite or studio" : "Coconut Cookies,Product,5000,2000,Lagos Bakers Co.,30,Pack of 12",
+      biz === "both" ? "Studio Booking,Service,15000,,,,Per hour" : `Sample Item,${defaultType},12000,6000,Supplier Name,,Short description here`,
     ].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -419,6 +851,8 @@ function BulkUpload({ session, biz, items, setItems, close }) {
       name: headers.indexOf("name"),
       type: headers.indexOf("type"),
       price: headers.indexOf("price"),
+      cost_price: headers.indexOf("cost_price") !== -1 ? headers.indexOf("cost_price") : headers.indexOf("cost"),
+      supplier: headers.indexOf("supplier"),
       stock: headers.indexOf("stock"),
       description: headers.indexOf("description"),
     };
@@ -429,6 +863,8 @@ function BulkUpload({ session, biz, items, setItems, close }) {
       const name = (row[idx.name] || "").trim();
       const typeRaw = idx.type !== -1 ? (row[idx.type] || "").trim() : "";
       const priceRaw = idx.price !== -1 ? (row[idx.price] || "").trim() : "";
+      const costRaw = idx.cost_price !== -1 ? (row[idx.cost_price] || "").trim() : "";
+      const supplier = idx.supplier !== -1 ? (row[idx.supplier] || "").trim() : "";
       const stockRaw = idx.stock !== -1 ? (row[idx.stock] || "").trim() : "";
       const description = idx.description !== -1 ? (row[idx.description] || "").trim() : "";
 
@@ -454,6 +890,13 @@ function BulkUpload({ session, biz, items, setItems, close }) {
         else price = p;
       }
 
+      let cost_price = null;
+      if (costRaw) {
+        const c = Number(costRaw.replace(/[,\s\u20A6]/g, ""));
+        if (isNaN(c) || c < 0) _error = _error || `Cost price must be a number (got "${costRaw}")`;
+        else cost_price = c;
+      }
+
       let stock = null;
       if (stockRaw) {
         const s = Number(stockRaw);
@@ -461,7 +904,7 @@ function BulkUpload({ session, biz, items, setItems, close }) {
         else stock = s;
       }
 
-      return { rowNum: i + 2, name, type, price, stock, description, _error };
+      return { rowNum: i + 2, name, type, price, cost_price, supplier: supplier || null, stock, description, _error };
     });
 
     setRows(validated);
@@ -476,8 +919,8 @@ function BulkUpload({ session, biz, items, setItems, close }) {
     const good = rows.filter(r => !r._error);
     const payload = good.map(r => ({
       user_id: session.user.id,
-      name: r.name, type: r.type, price: r.price, stock: r.stock,
-      description: r.description || null, image: null,
+      name: r.name, type: r.type, price: r.price, cost_price: r.cost_price, supplier: r.supplier,
+      stock: r.stock, description: r.description || null, image: null,
     }));
     let inserted = 0, failed = 0;
     if (payload.length > 0) {
@@ -599,7 +1042,7 @@ function CustPage({ session, customers, setCustomers, orders, payFor, modal, set
   };
 
   return <div>
-    <div className="ph"><div><div className="pt">Customers</div><div className="ps">{customers.length}</div></div><button className="btn btn-p" onClick={() => setModal({ t: "c", d: { name: "", phone: "", email: "", address: "", notes: "" } })}>{I.plus} Add</button></div>
+    <div className="ph"><div><div className="pt">Customers</div><div className="ps">{customers.length}</div></div><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><button className="btn btn-s" onClick={() => setModal({ t: "import" })}>Import CSV</button><button className="btn btn-p" onClick={() => setModal({ t: "c", d: { name: "", phone: "", email: "", address: "", notes: "" } })}>{I.plus} Add</button></div></div>
     {uniqueOrphans.length > 0 && <div className="card" style={{ marginBottom: 18, background: "var(--aml)", border: "1px solid #eed9a0" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
         <div><div style={{ fontWeight: 700, fontSize: 13, marginBottom: 2 }}>{uniqueOrphans.length} storefront customer{uniqueOrphans.length !== 1 ? "s" : ""} not yet saved</div><div style={{ fontSize: 12, color: "var(--t2)" }}>Import customers from past storefront orders</div></div>
@@ -628,6 +1071,7 @@ function CustPage({ session, customers, setCustomers, orders, payFor, modal, set
       </div>)}</div>
     </>}
     {modal?.t === "c" && <Modal title={modal.d.id ? "Edit Customer" : "Add Customer"} onClose={() => setModal(null)}><CForm d={modal.d} save={save} cancel={() => setModal(null)} /></Modal>}
+    {modal?.t === "import" && <SmartImport session={session} schemaKey="customers" allowSchemaSwitch={false} onClose={() => setModal(null)} onComplete={async () => { const { data } = await supabase.from("customers").select("*").eq("user_id", session.user.id).order("created_at", { ascending: false }); if (data) setCustomers(data); }} />}
   </div>;
 }
 function CForm({ d, save, cancel }) {
@@ -654,7 +1098,13 @@ function OrdPage({ session, orders, setOrders, customers, setCustomers, items, p
   const saveOrder = async (o, newPayments) => {
     let saved;
     const isNew = !o.id;
-    const payload = { date: o.date, customer_id: o.customer_id || null, customer_name: o.customer_name, item_id: o.item_id || null, item_name: o.item_name, total: Number(o.total) || 0, status: o.status, notes: o.notes, flow_status: o.flow_status || "active" };
+    // Snapshot cost at sale time so historical profit doesn't change if cost is updated later
+    let cost_at_sale = o.cost_at_sale;
+    if (isNew && o.item_id) {
+      const linkedItem = items.find(i => i.id === o.item_id);
+      if (linkedItem?.cost_price) cost_at_sale = Number(linkedItem.cost_price);
+    }
+    const payload = { date: o.date, customer_id: o.customer_id || null, customer_name: o.customer_name, item_id: o.item_id || null, item_name: o.item_name, total: Number(o.total) || 0, status: o.status, notes: o.notes, flow_status: o.flow_status || "active", cost_at_sale: cost_at_sale ?? null, quantity: Number(o.quantity) || 1 };
     if (o.id) { const { data } = await supabase.from("orders").update(payload).eq("id", o.id).select().single(); saved = data; if (saved) setOrders(orders.map(x => x.id === saved.id ? saved : x)); }
     else { const { data } = await supabase.from("orders").insert({ user_id: session.user.id, ...payload }).select().single(); saved = data; if (saved) setOrders([saved, ...orders]); }
     if (saved) {
@@ -673,7 +1123,7 @@ function OrdPage({ session, orders, setOrders, customers, setCustomers, items, p
   const storefrontCount = orders.filter(fromStorefront).length;
 
   return <div>
-    <div className="ph"><div><div className="pt">{ordL}</div><div className="ps">{orders.length} total {storefrontCount > 0 && `\u2022 ${storefrontCount} from storefront`}</div></div><button className="btn btn-p" onClick={() => setModal({ t: "o", d: { date: today(), customer_id: "", customer_name: "", item_id: "", item_name: "", total: "", status: "Pending", notes: "", _payments: [], flow_status: "active", source: "manual" } })}>{I.plus} New</button></div>
+    <div className="ph"><div><div className="pt">{ordL}</div><div className="ps">{orders.length} total {storefrontCount > 0 && `\u2022 ${storefrontCount} from storefront`}</div></div><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><button className="btn btn-s" onClick={() => setModal({ t: "import" })}>Import CSV</button><button className="btn btn-p" onClick={() => setModal({ t: "o", d: { date: today(), customer_id: "", customer_name: "", item_id: "", item_name: "", total: "", status: "Pending", notes: "", _payments: [], flow_status: "active", source: "manual" } })}>{I.plus} New</button></div></div>
     <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 18, flexWrap: "wrap" }}>
       <div className="tabs" style={{ marginBottom: 0, borderBottom: "none" }}>
         {[actionNeededCount > 0 && "Action Needed", "All", storefrontCount > 0 && "Storefront", ...STATUSES].filter(Boolean).map(t => <button key={t} className={`tab ${tab === t ? "active" : ""}`} onClick={() => setTab(t)}>{t}{t === "Action Needed" && actionNeededCount > 0 && ` (${actionNeededCount})`}</button>)}
@@ -700,6 +1150,7 @@ function OrdPage({ session, orders, setOrders, customers, setCustomers, items, p
     </>}
     {modal?.t === "o" && <Modal title={modal.d.id ? "Edit" : "New"} onClose={() => setModal(null)}><OForm d={modal.d} customers={customers} items={items} save={saveOrder} cancel={() => setModal(null)} /></Modal>}
     {modal?.t === "sf" && <Modal title="Storefront Order" onClose={() => setModal(null)} wide><SFForm d={modal.d} profile={profile} setOrders={setOrders} orders={orders} setPayments={setPayments} payments={payments} customers={customers} setCustomers={setCustomers} session={session} reload={reload} close={() => setModal(null)} /></Modal>}
+    {modal?.t === "import" && <SmartImport session={session} schemaKey="orders" allowSchemaSwitch={false} onClose={() => setModal(null)} onComplete={() => reload()} />}
   </div>;
 }
 
@@ -1266,12 +1717,22 @@ function SettPage({ session, profile, onProfile }) {
     setZones(zones.filter(z => z.id !== id));
   };
 
+  const [showImport, setShowImport] = useState(false);
+
   return <div>
     <div className="ph"><div><div className="pt">Settings</div><div className="ps">{session.user.email}</div></div></div>
     <div style={{ display: "grid", gap: 16, maxWidth: 560 }}>
       <div className="card"><div style={{ fontWeight: 600, fontSize: 13, marginBottom: 14 }}>Business</div><div className="fg"><label className="fl">Name</label><input className="fi" value={f.business_name} onChange={e => set("business_name", e.target.value)} /></div><div className="fr"><div className="fg"><label className="fl">Phone</label><input className="fi" value={f.business_phone} onChange={e => set("business_phone", e.target.value)} /></div><div className="fg"><label className="fl">Email</label><input className="fi" value={f.business_email} onChange={e => set("business_email", e.target.value)} /></div></div><div className="fg"><label className="fl">Type</label><select className="fs" value={f.business_type} onChange={e => set("business_type", e.target.value)}><option value="products">Products only</option><option value="services">Services only</option><option value="both">Products & Services</option></select></div></div>
       <div className="card"><div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>Bank Account</div><div style={{ fontSize: 11.5, color: "var(--t3)", marginBottom: 14 }}>Shown on invoices and customer order pages</div><div className="fg"><label className="fl">Bank</label><input className="fi" placeholder="e.g. GTBank, OPay, Kuda" value={f.bank_name} onChange={e => set("bank_name", e.target.value)} /></div><div className="fr"><div className="fg"><label className="fl">Account No.</label><input className="fi" value={f.account_number} onChange={e => set("account_number", e.target.value)} /></div><div className="fg"><label className="fl">Account Name</label><input className="fi" value={f.account_name} onChange={e => set("account_name", e.target.value)} /></div></div></div>
       <button className="btn btn-p" onClick={save} disabled={busy} style={{ justifySelf: "start" }}>{busy ? "Saving..." : ok ? "Saved!" : "Save"}</button>
+
+      <div className="card">
+        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>Import from spreadsheet</div>
+        <div style={{ fontSize: 11.5, color: "var(--t3)", marginBottom: 14, lineHeight: 1.5 }}>
+          Bring in your products, customers, or sales from an Excel or CSV file. We'll automatically match the columns to the right fields.
+        </div>
+        <button className="btn btn-s" onClick={() => setShowImport(true)}>Import data</button>
+      </div>
 
       {showZones && <div className="card">
         <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>Delivery Zones</div>
@@ -1293,6 +1754,7 @@ function SettPage({ session, profile, onProfile }) {
         </div>
       </div>}
     </div>
+    {showImport && <SmartImport session={session} onClose={() => setShowImport(false)} onComplete={() => setShowImport(false)} />}
   </div>;
 }
 
