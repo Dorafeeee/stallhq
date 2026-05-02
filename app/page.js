@@ -74,7 +74,7 @@ export default function Landing() {
           <div className="lp-hero-text">
             <div className="lp-eyebrow">Built for Nigerian entrepreneurs</div>
             <h1 className="lp-h1">Run your business.<br/><span className="lp-accent">Skip the spreadsheet.</span></h1>
-            <p className="lp-sub">StallHQ is the simplest way to sell, track inventory, send invoices, and grow your business — all in one place. Free while we grow.</p>
+            <p className="lp-sub">StallHQ is the simplest way to sell, track profit, and grow your business — all in one place. Already on a spreadsheet? Import it in two clicks. Free while we grow.</p>
             <div className="lp-hero-ctas">
               <Link href="/auth?mode=signup" className="lp-btn lp-btn-p lp-btn-lg">Sign up free</Link>
               <a href="#demo" className="lp-btn lp-btn-s lp-btn-lg">See it in action →</a>
@@ -98,8 +98,8 @@ export default function Landing() {
           </div>
           <div className="lp-pillar">
             <div className="lp-pillar-icon"><PillarStock /></div>
-            <h3>See what's working</h3>
-            <p>Revenue, top products, repeat customers — see your business clearly. Make decisions based on real numbers, not guesswork.</p>
+            <h3>Know your profit</h3>
+            <p>Add cost prices and we'll show you what you actually make — not just what comes in. Top profitable products, real margins, no math required.</p>
           </div>
           <div className="lp-pillar">
             <div className="lp-pillar-icon"><PillarPaid /></div>
@@ -134,11 +134,19 @@ export default function Landing() {
           />
 
           <FeatureRow
+            tag="Profit tracking"
+            title="See what you actually make"
+            body="Add cost prices to your products and StallHQ shows your real profit on every sale — not just revenue. Top profitable products, live margins, supplier tracking. The numbers your accountant will actually thank you for."
+            visual={<FeatureProfit />}
+            reverse={false}
+          />
+
+          <FeatureRow
             tag="Invoices"
             title="Send invoices that get paid"
             body="Create invoices for offline sales. Customer gets a payment link with your bank details. Stock auto-deducts when paid. The whole offline-to-online loop in one click."
             visual={<FeatureInvoice />}
-            reverse={false}
+            reverse={true}
           />
 
           <FeatureRow
@@ -146,23 +154,23 @@ export default function Landing() {
             title="Build trust with every order"
             body="Customers rate your business after each completed order. Aggregate stars show on your storefront — social proof that converts new visitors into buyers."
             visual={<FeatureReviews />}
-            reverse={true}
+            reverse={false}
           />
 
           <FeatureRow
             tag="Insights"
             title="Know your numbers"
-            body="Daily revenue, top products, repeat customers. Action-needed counts for orders waiting on you. Stock alerts when items run low. All in one dashboard so you always know how your business is doing."
+            body="Revenue, profit, margin %, top products, outstanding payments — all in one dashboard. Action-needed counts for orders waiting on you. Stock alerts when items run low. So you always know exactly how your business is doing."
             visual={<FeatureMetrics />}
-            reverse={false}
+            reverse={true}
           />
 
           <FeatureRow
-            tag="Bulk upload"
-            title="Add 50 products in 5 minutes"
-            body="Upload a CSV, preview validation errors, import only what's clean. Stop typing products one by one."
-            visual={<FeatureBulk />}
-            reverse={true}
+            tag="Spreadsheet import"
+            title="Already on Excel? Bring it over."
+            body="Upload your existing CSV from Excel or Google Sheets. We auto-match your columns to the right fields — even if they're named oddly. Preview before importing. Works for products, customers, and past sales."
+            visual={<FeatureImport />}
+            reverse={false}
           />
         </div>
       </section>
@@ -294,6 +302,8 @@ function Step({ n, title, body }) {
 const FAQS = [
   { q: "Is StallHQ free to use?", a: "Yes. StallHQ is free while we grow. We may introduce paid tiers as the product matures, but early users will always have access to fair, honest pricing." },
   { q: "What kind of businesses can use StallHQ?", a: "Any small business that sells products or services. Bakeries, makeup artists, fashion vendors, electronics resellers, freelancers — if you take orders and want to manage them in one place, StallHQ works for you." },
+  { q: "I already use Excel or Google Sheets. Can I bring my data over?", a: "Yes. Upload your CSV during signup or anytime from Settings. StallHQ auto-matches your columns to the right fields — even if they're named oddly. Works for products, customers, and past sales. Preview everything before it's saved." },
+  { q: "How does profit tracking work?", a: "Add a cost price (what you paid) to your products and StallHQ shows your real profit on every sale. Your dashboard shows total profit, margin %, and your top profitable products. The cost is locked in when an order is made — so updating prices later doesn't change your historical numbers." },
   { q: "Do customers need to download an app?", a: "No. Customers shop on a regular web link you share with them. No downloads, no signups required on their end." },
   { q: "How do customers pay?", a: "Customers see your bank account details on their order page after you send the invoice. They transfer, click 'I've paid', and you confirm. We don't process payments — your money goes straight to your bank." },
   { q: "Can I track inventory?", a: "Yes. StallHQ deducts stock automatically when orders are confirmed and shows 'only X left' warnings to customers when stock is low. You'll never oversell." },
@@ -816,19 +826,32 @@ function FeatureReviews() {
 }
 
 function FeatureMetrics() {
-  // Illustrated metrics dashboard
+  // Illustrated metrics dashboard with profit
   return <div className="lp-feat-mock" style={{background:'linear-gradient(135deg, #ECF2FE 0%, #E8F4F8 100%)',padding:'28px'}}>
     {/* Stat cards */}
-    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'16px'}}>
+    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'12px'}}>
       <div style={{background:'#fff',borderRadius:'10px',padding:'14px',boxShadow:'0 2px 8px rgba(29,91,214,.08)'}}>
         <div style={{fontSize:'9px',color:'#9A968B',textTransform:'uppercase',letterSpacing:'.8px',fontWeight:'600',fontFamily:'IBM Plex Mono,monospace',marginBottom:'6px'}}>Revenue</div>
         <div style={{fontFamily:'IBM Plex Mono,monospace',fontSize:'20px',fontWeight:'700',color:'#141413',lineHeight:'1',marginBottom:'4px'}}>₦1.62M</div>
         <div style={{fontSize:'10px',color:'#0F6E56',fontFamily:'IBM Plex Mono,monospace',fontWeight:'500'}}>↑ 12% vs last week</div>
       </div>
       <div style={{background:'#fff',borderRadius:'10px',padding:'14px',boxShadow:'0 2px 8px rgba(29,91,214,.08)'}}>
-        <div style={{fontSize:'9px',color:'#9A968B',textTransform:'uppercase',letterSpacing:'.8px',fontWeight:'600',fontFamily:'IBM Plex Mono,monospace',marginBottom:'6px'}}>Orders</div>
-        <div style={{fontFamily:'IBM Plex Mono,monospace',fontSize:'20px',fontWeight:'700',color:'#141413',lineHeight:'1',marginBottom:'4px'}}>13</div>
-        <div style={{fontSize:'10px',color:'#B14B2C',fontFamily:'IBM Plex Mono,monospace',fontWeight:'500'}}>3 awaiting action</div>
+        <div style={{fontSize:'9px',color:'#9A968B',textTransform:'uppercase',letterSpacing:'.8px',fontWeight:'600',fontFamily:'IBM Plex Mono,monospace',marginBottom:'6px'}}>Profit</div>
+        <div style={{fontFamily:'IBM Plex Mono,monospace',fontSize:'20px',fontWeight:'700',color:'#0F6E56',lineHeight:'1',marginBottom:'4px'}}>₦487K</div>
+        <div style={{fontSize:'10px',color:'#0F6E56',fontFamily:'IBM Plex Mono,monospace',fontWeight:'500'}}>34% margin</div>
+      </div>
+    </div>
+
+    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'16px'}}>
+      <div style={{background:'#fff',borderRadius:'10px',padding:'14px',boxShadow:'0 2px 8px rgba(29,91,214,.08)'}}>
+        <div style={{fontSize:'9px',color:'#9A968B',textTransform:'uppercase',letterSpacing:'.8px',fontWeight:'600',fontFamily:'IBM Plex Mono,monospace',marginBottom:'6px'}}>Outstanding</div>
+        <div style={{fontFamily:'IBM Plex Mono,monospace',fontSize:'20px',fontWeight:'700',color:'#A97008',lineHeight:'1',marginBottom:'4px'}}>₦115K</div>
+        <div style={{fontSize:'10px',color:'#A97008',fontFamily:'IBM Plex Mono,monospace',fontWeight:'500'}}>3 unpaid orders</div>
+      </div>
+      <div style={{background:'#fff',borderRadius:'10px',padding:'14px',boxShadow:'0 2px 8px rgba(29,91,214,.08)'}}>
+        <div style={{fontSize:'9px',color:'#9A968B',textTransform:'uppercase',letterSpacing:'.8px',fontWeight:'600',fontFamily:'IBM Plex Mono,monospace',marginBottom:'6px'}}>Customers</div>
+        <div style={{fontFamily:'IBM Plex Mono,monospace',fontSize:'20px',fontWeight:'700',color:'#141413',lineHeight:'1',marginBottom:'4px'}}>47</div>
+        <div style={{fontSize:'10px',color:'#6D30D9',fontFamily:'IBM Plex Mono,monospace',fontWeight:'500'}}>5 new this week</div>
       </div>
     </div>
     
@@ -842,6 +865,83 @@ function FeatureMetrics() {
       </div>
       <div style={{display:'flex',justifyContent:'space-between',marginTop:'8px',fontSize:'9px',color:'#9A968B',fontFamily:'IBM Plex Mono,monospace'}}>
         {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((d,i)=><span key={i}>{d}</span>)}
+      </div>
+    </div>
+  </div>;
+}
+
+function FeatureProfit() {
+  // Profit dashboard with cost vs revenue breakdown
+  return <div className="lp-feat-mock" style={{background:'linear-gradient(135deg, #FAEAE2 0%, #ECF2FE 100%)',padding:'28px'}}>
+    {/* Top stat: Profit */}
+    <div style={{background:'#fff',borderRadius:'12px',padding:'18px',boxShadow:'0 2px 12px rgba(177,75,44,.1)',marginBottom:'12px'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'10px'}}>
+        <div>
+          <div style={{fontSize:'9px',color:'#9A968B',textTransform:'uppercase',letterSpacing:'.8px',fontWeight:'700',fontFamily:'IBM Plex Mono,monospace',marginBottom:'4px'}}>Profit this month</div>
+          <div style={{fontFamily:'IBM Plex Mono,monospace',fontSize:'26px',fontWeight:'700',color:'#0F6E56',lineHeight:'1'}}>₦487,500</div>
+        </div>
+        <div style={{background:'#E6F4EE',color:'#0F6E56',padding:'5px 10px',borderRadius:'12px',fontSize:'11px',fontWeight:'700',fontFamily:'IBM Plex Mono,monospace'}}>34% margin</div>
+      </div>
+      {/* Stacked bar showing cost vs profit */}
+      <div style={{display:'flex',height:'10px',borderRadius:'5px',overflow:'hidden',marginBottom:'8px'}}>
+        <div style={{flex:'66',background:'#E5DFD2'}}/>
+        <div style={{flex:'34',background:'linear-gradient(90deg, #0F6E56, #4CAF93)'}}/>
+      </div>
+      <div style={{display:'flex',justifyContent:'space-between',fontSize:'10px',color:'#65635B',fontFamily:'IBM Plex Mono,monospace'}}>
+        <span>Costs ₦955k</span>
+        <span style={{color:'#0F6E56',fontWeight:'600'}}>Profit ₦487k</span>
+      </div>
+    </div>
+
+    {/* Top profitable products */}
+    <div style={{background:'#fff',borderRadius:'12px',padding:'14px',boxShadow:'0 2px 12px rgba(177,75,44,.1)'}}>
+      <div style={{fontSize:'9px',color:'#9A968B',textTransform:'uppercase',letterSpacing:'.8px',fontWeight:'700',fontFamily:'IBM Plex Mono,monospace',marginBottom:'10px'}}>Top profitable products</div>
+      {[
+        {rank:1, name:'Bridal Makeup', profit:'₦180,000'},
+        {rank:2, name:'Chocolate Cake', profit:'₦92,500'},
+        {rank:3, name:'Ankara Bundle', profit:'₦64,000'},
+      ].map((p)=>(
+        <div key={p.rank} style={{display:'flex',alignItems:'center',gap:'10px',padding:'7px 0',borderBottom:p.rank<3?'1px solid #F2EFE8':'none'}}>
+          <div style={{width:'22px',height:'22px',borderRadius:'11px',background:p.rank===1?'#FAEAE2':'#F2EFE8',color:p.rank===1?'#B14B2C':'#65635B',fontSize:'11px',fontWeight:'700',fontFamily:'IBM Plex Mono,monospace',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>{p.rank}</div>
+          <div style={{flex:'1',fontSize:'12px',color:'#141413',fontWeight:'500',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.name}</div>
+          <div style={{fontFamily:'IBM Plex Mono,monospace',fontSize:'12px',fontWeight:'700',color:'#0F6E56'}}>{p.profit}</div>
+        </div>
+      ))}
+    </div>
+  </div>;
+}
+
+function FeatureImport() {
+  // Spreadsheet column mapping illustration
+  return <div className="lp-feat-mock" style={{background:'linear-gradient(135deg, #F1ECFE 0%, #ECF2FE 100%)',padding:'28px'}}>
+    {/* Mapping flow: source columns → target fields */}
+    <div style={{background:'#fff',borderRadius:'12px',padding:'16px',boxShadow:'0 2px 12px rgba(109,48,217,.08)',marginBottom:'12px'}}>
+      <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'12px'}}>
+        <div style={{width:'24px',height:'24px',background:'#1D7340',borderRadius:'4px',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontSize:'11px',fontWeight:'700',fontFamily:'IBM Plex Mono,monospace'}}>X</div>
+        <div style={{flex:'1',fontSize:'12px',fontWeight:'600',color:'#141413',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>my-products.xlsx</div>
+        <div style={{fontSize:'10px',color:'#0F6E56',fontWeight:'600',fontFamily:'IBM Plex Mono,monospace'}}>247 rows</div>
+      </div>
+      {[
+        {source:'Item Name', target:'Product name'},
+        {source:'Selling Price (₦)', target:'Price'},
+        {source:'Cost', target:'Cost price'},
+        {source:'Available Qty', target:'Stock'},
+      ].map((m,i)=>(
+        <div key={i} style={{display:'flex',alignItems:'center',gap:'8px',padding:'8px 0',borderBottom:i<3?'1px solid #F2EFE8':'none'}}>
+          <div style={{flex:'1',fontSize:'11.5px',color:'#65635B',fontFamily:'IBM Plex Mono,monospace',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{m.source}</div>
+          <span style={{color:'#9A968B',fontSize:'12px'}}>→</span>
+          <div style={{flex:'1',fontSize:'11.5px',color:'#141413',fontWeight:'600',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{m.target}</div>
+          <span style={{background:'#E6F4EE',color:'#0F6E56',padding:'2px 6px',borderRadius:'8px',fontSize:'9px',fontWeight:'700',fontFamily:'IBM Plex Mono,monospace',flexShrink:0}}>✓</span>
+        </div>
+      ))}
+    </div>
+
+    {/* Result summary */}
+    <div style={{background:'#E6F4EE',borderRadius:'10px',padding:'12px',display:'flex',alignItems:'center',gap:'10px'}}>
+      <div style={{width:'28px',height:'28px',background:'#0F6E56',borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontSize:'14px',fontWeight:'700',flexShrink:0}}>✓</div>
+      <div>
+        <div style={{fontSize:'12px',fontWeight:'700',color:'#141413'}}>Auto-matched 4 columns</div>
+        <div style={{fontSize:'10.5px',color:'#65635B',fontFamily:'IBM Plex Mono,monospace'}}>Review and confirm</div>
       </div>
     </div>
   </div>;
